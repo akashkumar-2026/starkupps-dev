@@ -42,7 +42,7 @@ export function NotFound() {
   );
 }
 
-export function RouteError({ error, reset }: { error: Error; reset: () => void }) {
+export function RouteError({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
 
   useEffect(() => {
