@@ -153,17 +153,23 @@ $RECYCLE.BIN/
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
 *.code-workspace
 .history/
 *.sublime-project
 *.sublime-workspace
 
+# ── Agent / tooling config ─────────────────────────────────
+.claude/
+.cursor/
+
 # ── Monorepo / workspace extras ───────────────────────────
 .webdev/
 .vercel
-.netlify/
-cloudflare-workers/
+.netlify
+
+# ── Merge leftovers / archives ─────────────────────────────
+*.orig
+*.rej
 
 # ── Misc ──────────────────────────────────────────────────
 *.pem
