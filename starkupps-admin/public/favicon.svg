@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="StarKupps">
+  <rect width="32" height="32" rx="7" fill="#211B18" />
+  <g fill="none" stroke="#E2533C" stroke-linecap="round">
+    <path d="M11 20.5c-1.6-1-2.4-2.6-2.4-4.6 0-2.5 1.5-4.3 3.6-4.9" stroke-width="2.4" />
+    <path d="M14.6 11c-.3 1.5.2 2.7 1.2 3.7 1.6 1.6 1.6 4.1 0 5.7" stroke-width="2" opacity=".65" />
+  </g>
+  <g fill="none" stroke="#F9D5B2" stroke-width="1.6" opacity=".8">
+    <path d="M22.4 12.2 24.9 19M19.9 19l2.5 6.8M24.9 19l-5 6.8" stroke-linecap="round" />
+  </g>
+</svg>

@@ -1,0 +1,171 @@
+# ============================================================
+# Root .gitignore — starkupps monorepo
+# Covers: starkupps-admin (Vite + React + Express + Drizzle)
+#         starkupps-web   (Vite + React SPA)
+# ============================================================
+
+# ── Dependencies ──────────────────────────────────────────
+**/node_modules/
+jspm_packages/
+.pnp/
+.pnp.js
+.pnp.cjs
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
+
+# Keep lockfiles committed (uncomment to ignore if needed)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+# bun.lockb
+# bun.lock
+
+# ── Build outputs ─────────────────────────────────────────
+dist/
+build/
+*.dist/
+*.dist
+out/
+.output/
+dist-ssr/
+.tanstack/
+.wrangler/
+.cache/
+.vite/
+.next/
+.nuxt/
+.storybook-out/
+.out/
+tmp/
+temp/
+
+# TanStack Router generated route tree (regenerated on dev/build)
+routeTree.gen.ts
+**/routeTree.gen.ts
+
+# ── Environment variables ─────────────────────────────────
+# Never commit secrets — .env.example is the only env file tracked
+.env
+.env.*
+.envrc
+.dev.vars
+.env.keys
+!.env.example
+!**/.env.example
+
+# ── Provisioned credentials (production secrets) ─────────────────
+.provisioned-credentials.json
+provisioned-credentials.json
+*provisioned*credentials*
+# Live secret files — never track (use env vars / secret manager instead)
+creds.txt
+**/creds.txt
+starkupps-access-token-key.txt
+**/starkupps-access-token-key.txt
+sbp_*.txt
+latestdb*.sql
+*.dump.sql
+
+# ── Logs ──────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+pnpm-error.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ── Runtime / PID / lock files ────────────────────────────
+pids/
+*.pid
+*.seed
+*.pid.lock
+*.bak
+*.tgz
+.yarn-integrity
+
+# ── Testing & Coverage ────────────────────────────────────
+coverage/
+*.lcov
+.nyc_output/
+junit.xml
+test-results/
+playwright-report/
+blob-report/
+
+# ── TypeScript & tooling caches ───────────────────────────
+*.tsbuildinfo
+*.js.map
+*.d.ts.map
+.eslintcache
+.stylelintcache
+.prettiercache
+.cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.turbo/
+.nx/cache/
+.parcel-cache/
+
+# Optional caches
+.npm/
+.node_repl_history
+.yarn/cache
+.yarn/unplugged
+
+# ── Database ──────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sql-journal
+*.sqlite-*
+# Supabase is the single source of truth (supabase/migrations).
+# No local/Drizzle database files are used.
+
+# ── OS generated files ────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+$RECYCLE.BIN/
+
+# ── IDE / Editor ──────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.code-workspace
+.history/
+*.sublime-project
+*.sublime-workspace
+
+# ── Monorepo / workspace extras ───────────────────────────
+.webdev/
+.vercel
+.netlify/
+cloudflare-workers/
+
+# ── Misc ──────────────────────────────────────────────────
+*.pem
+*.key
+*.cert

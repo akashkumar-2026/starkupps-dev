@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Test output
+coverage/
+.vitest/
+
+# Environment — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Supabase CLI local state (linked project ref, pooler URL, tokens)
+supabase/.temp/
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime and caches
+*.pid
+*.pid.lock
+*.seed
+*.bak
+.cache/
+.eslintcache
+.npm
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Provisioning output — contains generated passwords
+.provisioned-credentials.json

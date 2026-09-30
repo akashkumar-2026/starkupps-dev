@@ -1,0 +1,141 @@
+/** Kitchen Ledger design: oat-milk surfaces, espresso structure, Pass Red signals, and compact editorial utility. */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.95rem;
+  --background: oklch(0.972 0.012 84);
+  --foreground: oklch(0.22 0.018 52);
+  --card: oklch(0.996 0.006 84);
+  --card-foreground: oklch(0.22 0.018 52);
+  --popover: oklch(0.996 0.006 84);
+  --popover-foreground: oklch(0.22 0.018 52);
+  --primary: oklch(0.61 0.18 31);
+  --primary-foreground: oklch(0.99 0.01 78);
+  --secondary: oklch(0.947 0.014 84);
+  --secondary-foreground: oklch(0.39 0.028 52);
+  --muted: oklch(0.941 0.012 84);
+  --muted-foreground: oklch(0.51 0.027 57);
+  --accent: oklch(0.947 0.014 84);
+  --accent-foreground: oklch(0.22 0.018 52);
+  --destructive: oklch(0.58 0.21 27);
+  --destructive-foreground: oklch(0.99 0.01 78);
+  --border: oklch(0.884 0.02 78);
+  --input: oklch(0.884 0.02 78);
+  --ring: oklch(0.61 0.18 31);
+  /* Sidebar — espresso workbench */
+  --sidebar: oklch(0.22 0.018 52);
+  --sidebar-foreground: oklch(0.97 0.01 78);
+  --sidebar-primary: oklch(0.61 0.18 31);
+  --sidebar-primary-foreground: oklch(0.99 0.01 78);
+  --sidebar-accent: oklch(0.28 0.02 52);
+  --sidebar-accent-foreground: oklch(0.97 0.01 78);
+  --sidebar-border: oklch(0.28 0.02 52);
+  --sidebar-ring: oklch(0.61 0.18 31);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Manrope", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+}
+
+@layer utilities {
+  .font-mono-ledger {
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .ticket-rule {
+    background-image: linear-gradient(
+      to right,
+      oklch(0.82 0.025 78 / 70%) 45%,
+      transparent 0%
+    );
+    background-position: bottom;
+    background-size: 7px 1px;
+    background-repeat: repeat-x;
+  }
+  .surface-grain {
+    background-image:
+      radial-gradient(
+        circle at 20% 12%,
+        oklch(0.98 0.02 82 / 65%) 0 1px,
+        transparent 1.5px
+      ),
+      radial-gradient(
+        circle at 80% 70%,
+        oklch(0.91 0.025 75 / 40%) 0 1px,
+        transparent 1.5px
+      );
+    background-size:
+      18px 18px,
+      23px 23px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ticket-enter {
+    animation: ticket-enter 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+  @keyframes ticket-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

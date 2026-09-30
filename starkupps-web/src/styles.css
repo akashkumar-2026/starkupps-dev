@@ -1,0 +1,310 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * StarKupps design system — warm minimalism.
+ * Cream base, near-black warm ink, burnt terracotta accent, espresso dark sections.
+ * All colors in oklch. Never hardcode colors in components.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: calc(var(--radius) + 12px);
+  --radius-3xl: calc(var(--radius) + 20px);
+  --radius-4xl: calc(var(--radius) + 28px);
+
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-espresso: var(--espresso);
+  --color-espresso-foreground: var(--espresso-foreground);
+  --color-veg: var(--veg);
+  --color-nonveg: var(--nonveg);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --shadow-chip: 0 1px 2px oklch(0.25 0.04 50 / 0.08);
+  --shadow-card: 0 2px 10px -2px oklch(0.25 0.04 50 / 0.1);
+  --shadow-raised: 0 12px 32px -12px oklch(0.25 0.04 50 / 0.22);
+  --shadow-sheet: 0 -18px 60px -18px oklch(0.25 0.04 50 / 0.32);
+}
+
+:root {
+  --radius: 1rem;
+  /* #FAF6F0 */
+  --background: oklch(0.973 0.011 78);
+  /* #1A1613 */
+  --foreground: oklch(0.203 0.009 55);
+  --card: oklch(0.995 0.006 80);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.987 0.008 80);
+  --popover-foreground: var(--foreground);
+  /* #C9622F */
+  --primary: oklch(0.585 0.144 43.5);
+  --primary-foreground: oklch(0.985 0.008 80);
+  --secondary: oklch(0.938 0.016 76);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.945 0.013 76);
+  --muted-foreground: oklch(0.505 0.018 60);
+  --accent: oklch(0.93 0.03 60);
+  --accent-foreground: var(--foreground);
+  /* #3E2A20 */
+  --espresso: oklch(0.293 0.031 45);
+  --espresso-foreground: oklch(0.973 0.011 78);
+  --veg: oklch(0.58 0.14 145);
+  --nonveg: oklch(0.55 0.19 28);
+  --destructive: oklch(0.55 0.19 28);
+  --destructive-foreground: oklch(0.985 0.008 80);
+  --border: oklch(0.895 0.016 74);
+  --input: oklch(0.895 0.016 74);
+  --ring: var(--primary);
+}
+
+.dark {
+  --background: oklch(0.203 0.009 55);
+  --foreground: oklch(0.965 0.011 78);
+  --card: oklch(0.253 0.014 50);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.253 0.014 50);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.655 0.148 45);
+  --primary-foreground: oklch(0.18 0.01 55);
+  --secondary: oklch(0.283 0.016 50);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.283 0.016 50);
+  --muted-foreground: oklch(0.735 0.017 70);
+  --accent: oklch(0.32 0.026 48);
+  --accent-foreground: var(--foreground);
+  --espresso: oklch(0.253 0.02 45);
+  --espresso-foreground: oklch(0.965 0.011 78);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    overscroll-behavior-y: none;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Display type scales fluidly, never jumps at breakpoints. */
+@utility display-xl {
+  font-family: var(--font-display);
+  font-size: clamp(2.75rem, 11vw, 6rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+@utility display-lg {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+@utility eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Translucent material. Respects transparency/contrast preferences. */
+@utility material {
+  background-color: color-mix(in oklab, var(--color-background) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: color-mix(in oklab, var(--color-background) 97%, transparent);
+    backdrop-filter: none;
+  }
+
+  @media (prefers-contrast: more) {
+    background-color: var(--color-background);
+    backdrop-filter: none;
+    border-color: var(--color-foreground);
+  }
+}
+
+@utility rubber-scroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes review-scroll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+.review-track {
+  animation: review-scroll 18s linear infinite;
+  will-change: transform;
+}
+
+.group:hover .review-track,
+.group:focus-within .review-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-track {
+    animation: none;
+  }
+}
+
+/*
+ * Instagram marquee — horizontal counterpart of `.review-track`.
+ *
+ * The track renders the feed twice and translates by -50%, so the seam is never
+ * visible. `--ig-duration` and `--ig-play-state` are written by React
+ * (see `useInstagramMarquee`) so pausing and re-syncing never restarts the
+ * animation, which would snap it back to the start.
+ */
+.instagram-shell {
+  /* ~1.3 cards on a phone so the next one peeks. */
+  --ig-card-w: 78vw;
+  --ig-gap: 12px;
+  /* Tall on purpose. Instagram's /embed/ is a whole mini-webpage — header,
+     media, action row, caption — not a bare image. Forcing it into a 4:5 box
+     made it scroll internally and crop the header, which is what the raw
+     embeds looked like. Height is a fixed token rather than an aspect ratio so
+     the box is reserved before the embed paints (no layout shift) and tall
+     enough for a 9:16 reel to sit without scrolling. */
+  --ig-card-h: 30rem;
+  --ig-embed-lift: 3.25rem;
+  --ig-embed-tail: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .instagram-shell {
+    /* ~2.5 cards on tablet. */
+    --ig-card-w: 38vw;
+    --ig-gap: 16px;
+    --ig-card-h: 33rem;
+    --ig-embed-lift: 3.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .instagram-shell {
+    /* ~4 cards on desktop. The floor is sized so 1024px still lands on four
+       rather than three-and-a-bit; the ceiling keeps cards from ballooning on
+       ultra-wide screens. */
+    --ig-card-w: clamp(248px, 23vw, 340px);
+    --ig-card-h: 34rem;
+    --ig-embed-lift: 3.5rem;
+  }
+}
+
+@keyframes instagram-scroll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.instagram-viewport {
+  overflow-x: hidden;
+  /* Horizontal flings must not trigger browser back-navigation, but vertical
+     page scrolling has to keep working — `overflow-x` alone handles both. */
+  overscroll-behavior-x: contain;
+}
+
+/* Touch: there is no hover, so the row becomes a native scroll container the
+   moment a finger touches it, with snap points per card. */
+.instagram-shell[data-manual="true"] .instagram-viewport,
+.instagram-shell[data-static="true"] .instagram-viewport {
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.instagram-shell[data-manual="true"] .instagram-viewport::-webkit-scrollbar,
+.instagram-shell[data-static="true"] .instagram-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.instagram-shell[data-static="true"] .instagram-track {
+  animation: none;
+}
+
+.instagram-track {
+  animation: instagram-scroll var(--ig-duration, 40s) linear infinite;
+  animation-delay: var(--ig-delay, 0s);
+  animation-play-state: var(--ig-play-state, running);
+  will-change: transform;
+}
+
+/* Hover and keyboard focus both pause — iframes sit under a transparent overlay
+   that forwards hover, and Tab reaches the overlay button. */
+.instagram-shell[data-hover-pause="true"]:hover .instagram-track,
+.instagram-shell[data-hover-pause="true"]:focus-within .instagram-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .instagram-track {
+    animation: none;
+  }
+}
