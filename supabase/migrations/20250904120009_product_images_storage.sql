@@ -60,4 +60,11 @@ END $$;
 -- Ensure product-images bucket is in public read for anon (if RLS tighten later, uncomment)
 -- No additional publication needed — storage is not part of supabase_realtime.
 
-COMMENT ON TABLE storage.objects IS 'Stores product-images and starkupps buckets; product-images is 5MB limit, public CDN';
+-- storage.objects is owned by supabase_storage_admin; the postgres role cannot
+-- always alter its comment. Guarded so the migration applies on any project.
+DO $$
+BEGIN
+  COMMENT ON TABLE storage.objects IS 'Stores product-images and starkupps buckets; product-images is 5MB limit, public CDN';
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'skipping comment on storage.objects (not owner)';
+END $$;

@@ -28,7 +28,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || "dsdkxwwbwlmakvftaufw";
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || "njqrcxtjzghlyrmgsrmq";
 const SUPABASE_URL =
   process.env.SUPABASE_URL || `https://${PROJECT_REF}.supabase.co`;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
