@@ -129,6 +129,10 @@ Minimum for production: `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`,
 
 ## Deployment
 
+Deployed to Google Cloud Run (`starkupps-backend`, `asia-northeast2`). See
+[DEPLOY.md](./DEPLOY.md) for deploy commands, env var management, connecting
+GitHub for auto-deploy, and troubleshooting.
+
 Build both halves, then run one process:
 
 ```sh
