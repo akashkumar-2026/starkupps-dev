@@ -74,6 +74,7 @@ import {
 } from "./operationsRouter";
 import { auditRouter } from "./auditRouter";
 import { contentRouter } from "./contentRouter";
+import { siteContentRouter } from "./siteContentRouter";
 import { couponsRouter } from "./couponsRouter";
 import { customersRouter } from "./customersRouter";
 import { deliveryRouter } from "./deliveryRouter";
@@ -644,7 +645,7 @@ export const appRouter = router({
           // Fall back to the direct pooler, which is markedly more reliable.
           const sql = await getSql();
           const rows: any[] = await sql.unsafe(
-            "SELECT sessionVersion, openId, role, status FROM users WHERE id = $1 LIMIT 1",
+            'SELECT "sessionVersion", "openId", role, status FROM users WHERE id = $1 LIMIT 1',
             [session.userId]
           );
           if (rows[0]) return rows[0];
@@ -1293,6 +1294,7 @@ export const appRouter = router({
   notifications: notificationsRouter,
   search: searchRouter,
   settings: settingsRouter,
+  siteContent: siteContentRouter,
   shifts: shiftsRouter,
   staff: staffWorkforceRouter,
   outlets: outletsRouter,
