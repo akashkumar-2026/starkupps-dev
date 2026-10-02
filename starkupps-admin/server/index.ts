@@ -785,6 +785,27 @@ async function startServer() {
     }
   });
 
+  app.get("/api/public/faqs", async (req, res) => {
+    try {
+      const { createCallerFactory } = await import("./lib/trpc");
+      const { publicRouter } = await import("./routers/publicRouter");
+      const caller = createCallerFactory(publicRouter)({
+        user: null,
+        aud: null,
+        req: req as any,
+        res: res as any,
+      });
+      const data = await (caller as any).faqs();
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=30, s-maxage=60, stale-while-revalidate=600"
+      );
+      res.json(data);
+    } catch (e: any) {
+      sendTrpcError(res, e);
+    }
+  });
+
   // Instagram feed. Public read, so it is cacheable at the edge; the storefront
   // section polls on a ~60s window and the Admin panel is the only writer.
   // `stale-while-revalidate` keeps the home page snappy while an edit lands.
