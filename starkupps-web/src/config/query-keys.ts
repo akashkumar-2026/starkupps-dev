@@ -11,4 +11,8 @@ export const queryKeys = {
   /** Matches every menu variant, for bulk invalidation. */
   allMenus: ["public", "menu"] as const,
   instagram: ["public", "instagram"] as const,
+  /** Storefront business facts, from `public.site_settings`. */
+  site: ["public", "site"] as const,
+  /** Customer reviews, from `public.testimonials`. */
+  reviews: ["public", "reviews"] as const,
 } as const;
