@@ -16,6 +16,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { hasPermission, recordAudit, resolveStaffRole } from "../db/index";
 import { protectedProcedure, router } from "../lib/trpc";
+import { resolveInstagramThumbnail } from "../lib/instagram-thumbnails";
 import { getSql, getSupabaseAdmin } from "../db/supabase";
 import {
   INSTAGRAM_LIMITS,
@@ -54,6 +55,7 @@ function toPost(row: any): InstagramPost {
     type: row.type === "reel" ? "reel" : "post",
     caption: row.caption ?? null,
     thumbnailUrl: row.thumbnailUrl ?? null,
+    previewVideoUrl: row.previewVideoUrl ?? null,
     sortOrder: Number(row.sortOrder ?? 0),
     isActive: Boolean(row.isActive),
     createdAt: String(row.createdAt ?? new Date().toISOString()),
@@ -62,68 +64,7 @@ function toPost(row: any): InstagramPost {
 }
 
 const POST_COLUMNS =
-  "id,url,shortcode,type,caption,thumbnailUrl,sortOrder,isActive,createdAt,updatedAt";
-
-// ── Thumbnail resolution ─────────────────────────────────────────────────
-//
-// Instagram has no token-free API, but it does expose a permalink media
-// endpoint that redirects to a CDN file:
-//     /p/{shortcode}/media/?size=l  ->  302 -> https://...fbcdn.net/....jpg
-// It works for reels as well as posts — the reel resolves to its cover frame —
-// so one code path covers both types. Using /p/ (not /reel/) is deliberate:
-// the reel variant returns 404.
-//
-// Only the redirect is read (no image bytes cross the gateway), the result is
-// cached in-process, and the resolved host is allow-listed before it is handed
-// to the browser. No token, no scraping of the rendered page.
-
-const THUMB_TTL_MS = 30 * 60 * 1000;
-const THUMB_TIMEOUT_MS = 6000;
-const thumbCache = new Map<string, { url: string | null; exp: number }>();
-
-// Only Instagram/Meta CDNs are ever returned.
-const THUMB_HOST_RE = /(^|\.)(cdninstagram\.com|fba\.net|fbcdn\.net)$/i;
-
-async function resolveThumbnail(shortcode: string): Promise<string | null> {
-  const cached = thumbCache.get(shortcode);
-  if (cached && cached.exp > Date.now()) return cached.url;
-
-  let url: string | null = null;
-  try {
-    const res = await fetch(
-      `https://www.instagram.com/p/${encodeURIComponent(shortcode)}/media/?size=l`,
-      {
-        redirect: "manual",
-        signal: AbortSignal.timeout(THUMB_TIMEOUT_MS),
-        headers: {
-          // Instagram serves the redirect to any real browser UA.
-          "User-Agent":
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          Accept: "image/avif,image/webp,image/*,*/*;q=0.8",
-        },
-      }
-    );
-    const location = res.headers.get("location");
-    if (res.status === 302 && location) {
-      try {
-        const parsed = new URL(location);
-        if (
-          parsed.protocol === "https:" &&
-          THUMB_HOST_RE.test(parsed.hostname)
-        ) {
-          url = parsed.toString();
-        }
-      } catch {
-        url = null;
-      }
-    }
-  } catch {
-    url = null;
-  }
-
-  thumbCache.set(shortcode, { url, exp: Date.now() + THUMB_TTL_MS });
-  return url;
-}
+  "id,url,shortcode,type,caption,thumbnailUrl,previewVideoUrl,sortOrder,isActive,createdAt,updatedAt";
 
 export const instagramRouter = router({
   posts: router({
@@ -230,6 +171,7 @@ export const instagramRouter = router({
           id: z.number().int().positive(),
           url: z.string().trim().min(1).max(2000).optional(),
           caption: z.string().max(INSTAGRAM_LIMITS.caption).nullish(),
+          previewVideoUrl: z.string().url().nullable().optional(),
           isActive: z.boolean().optional(),
         })
       )
@@ -264,6 +206,21 @@ export const instagramRouter = router({
         }
         if (input.caption !== undefined) {
           patch.caption = sanitizeText(input.caption, INSTAGRAM_LIMITS.caption);
+        }
+        if (input.previewVideoUrl !== undefined) {
+          if (input.previewVideoUrl !== null) {
+            const publicPrefix = supabase.storage
+              .from("instagram-previews")
+              .getPublicUrl("").data.publicUrl;
+            if (!input.previewVideoUrl.startsWith(publicPrefix)) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message:
+                  "Preview videos must be uploaded through Instagram settings.",
+              });
+            }
+          }
+          patch.previewVideoUrl = input.previewVideoUrl;
         }
         if (input.isActive !== undefined) patch.isActive = input.isActive;
 
@@ -417,6 +374,66 @@ export const instagramRouter = router({
       }),
   }),
 
+  /** Upload a short MP4 clip; the post record is linked when its edit is saved. */
+  uploadPreviewVideo: protectedProcedure
+    .input(
+      z.object({
+        filename: z.string().trim().min(1).max(120),
+        contentType: z.literal("video/mp4"),
+        data: z.string().min(1).max(7_000_000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await need(ctx.user, "content.manage");
+      const buffer = Buffer.from(input.data, "base64");
+      const maxBytes = 5 * 1024 * 1024;
+      if (buffer.length === 0 || buffer.length > maxBytes) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Preview video must be between 1 byte and 5 MB.",
+        });
+      }
+      if (buffer.subarray(4, 8).toString("ascii") !== "ftyp") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Upload a valid MP4 video file.",
+        });
+      }
+
+      const safeName = input.filename
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .slice(0, 80);
+      const base = safeName.replace(/\.[^.]+$/, "") || "reel-preview";
+      const key = `reels/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${base}.mp4`;
+      const supabase = getSupabaseAdmin();
+      const bucket = "instagram-previews";
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(key, buffer, {
+          contentType: "video/mp4",
+          upsert: false,
+          cacheControl: "3600",
+        });
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Preview upload failed: ${error.message}`,
+        });
+      }
+
+      const { data: publicUrl } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(key);
+      const url = publicUrl.publicUrl;
+      await recordAudit({
+        actorUserId: ctx.user.id,
+        entityType: "instagram_preview_video",
+        action: "uploaded",
+        after: { key, bytes: buffer.length },
+      });
+      return { url, bytes: buffer.length };
+    }),
+
   /**
    * Resolve poster frames for a batch of shortcodes.
    *
@@ -444,7 +461,7 @@ export const instagramRouter = router({
       // Small bounded fan-out; Instagram is only asked once per shortcode per TTL.
       const out: Record<string, string | null> = {};
       for (const shortcode of unique) {
-        out[shortcode] = await resolveThumbnail(shortcode);
+        out[shortcode] = await resolveInstagramThumbnail(shortcode);
       }
       return out;
     }),
