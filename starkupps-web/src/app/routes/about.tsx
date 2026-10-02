@@ -5,7 +5,7 @@ import { PageMeta } from "@/app/PageMeta";
 import { Header } from "@/components/layout/Header";
 import { CartSheet } from "@/features/cart/components/CartSheet";
 import { siteLinks } from "@/config/site";
-import { useSiteSettings } from "@/features/content/useSiteContent";
+import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
 import spaceImg from "@/assets/space.jpg";
 import coffeeImg from "@/assets/hero-coffee.jpg";
 
@@ -15,7 +15,11 @@ export const Route = createFileRoute("/about")({
 
 function About() {
   const { data: site } = useSiteSettings();
+  const status = useStoreStatus();
   const links = site ? siteLinks(site) : null;
+  // Prefer the live weekly schedule over the owner-written summary so this page
+  // cannot contradict the storefront badge.
+  const aboutHours = status.weekSummary || site?.hoursSummary;
 
   return (
     <>
@@ -89,12 +93,12 @@ function About() {
                 <dd className="font-medium">{site.trustClaim3}</dd>
               </div>
             )}
-            {site?.hoursSummary && (
+            {aboutHours && (
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">Hours</dt>
                 <dd className="font-medium">
-                  {site.hoursSummary}
-                  {site.hoursNote ? `, ${site.hoursNote.toLowerCase()}` : ""}
+                  {aboutHours}
+                  {site?.hoursNote ? `, ${site.hoursNote.toLowerCase()}` : ""}
                 </dd>
               </div>
             )}
