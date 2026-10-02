@@ -5,3 +5,4 @@ export type * from "./menu";
 export type * from "./orders";
 export type * from "./outlet";
 export type * from "./profile";
+export type * from "./site";
