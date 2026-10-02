@@ -35,6 +35,9 @@ const SITE_CONTENT_COLUMNS = [
   "hoursSummary",
   "hoursShort",
   "hoursNote",
+  "openTime",
+  "closeTime",
+  "closedDays",
   "fssaiLicense",
   "heroHeading",
   "heroSubheading",
@@ -95,6 +98,25 @@ const saveInput = z.object({
   hoursSummary: z.string().trim().max(120),
   hoursShort: z.string().trim().max(120),
   hoursNote: z.string().trim().max(200),
+  // Real schedule behind the storefront open/closed badge. 24h HH:mm.
+  openTime: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use 24h HH:mm, e.g. 10:00")
+    .or(z.literal("")),
+  closeTime: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use 24h HH:mm, e.g. 23:00")
+    .or(z.literal("")),
+  // ISO weekday numbers, 1 = Monday .. 7 = Sunday.
+  closedDays: z
+    .string()
+    .trim()
+    .regex(
+      /^([1-7](\s*,\s*[1-7])*)?$/,
+      "Weekdays 1 (Mon) to 7 (Sun), comma separated"
+    ),
   fssaiLicense: z.string().trim().max(100),
   heroHeading: z.string().trim().min(2).max(300),
   heroSubheading: z.string().trim().max(600),
