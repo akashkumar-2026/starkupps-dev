@@ -1,7 +1,7 @@
 import { Clock, MapPin, Phone } from "lucide-react";
 
 import { phoneDisplay, siteLinks } from "@/config/site";
-import { useSiteSettings } from "@/features/content/useSiteContent";
+import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
 
 /**
  * "Visit" section.
@@ -11,24 +11,35 @@ import { useSiteSettings } from "@/features/content/useSiteContent";
  * literal and a literal phone number in two `href`s), and the address differed
  * from the copy in `config/site.ts` that the footer used.
  *
+ * Hours are read from the store's structured weekly schedule (Admin > Outlets >
+ * Operating Hours) so the page reflects a real change of opening time. The
+ * owner-written `hoursSummary` is only used when no schedule exists.
+ *
  * Links whose number is not configured are omitted rather than rendered as a
  * dead `tel:+` or `wa.me` target.
  */
 export function LocationSection() {
   const { data: site } = useSiteSettings();
+  const status = useStoreStatus();
   if (!site) return null;
 
   const links = siteLinks(site);
   const phone = phoneDisplay(site.phoneDigits);
   // "Azad Chowk, Munger — open till 11 PM." from the first two address segments
-  // plus the owner-configured closing note.
+  // plus today's live status.
   const area = site.address
     .split(",")
     .slice(0, 2)
     .map((part) => part.trim())
     .filter(Boolean)
     .join(", ");
-  const heading = [area, site.openBadge.toLowerCase()].filter(Boolean).join(" — ");
+  const statusSuffix =
+    status.isOpen === null
+      ? site.openBadge.toLowerCase()
+      : `${status.isOpen ? "open" : "closed"}${status.detail ? ` · ${status.detail.toLowerCase()}` : ""}`;
+  const heading = [area, statusSuffix].filter(Boolean).join(" — ");
+  const hoursLine = status.todayLabel || site.hoursSummary;
+  const hoursNote = status.weekSummary || site.hoursNote;
 
   return (
     <section id="visit" className="mx-auto w-full max-w-6xl scroll-mt-16 px-4 py-14">
@@ -59,13 +70,12 @@ export function LocationSection() {
               </p>
             </div>
           )}
-          {site.hoursSummary && (
+          {hoursLine && (
             <div className="mt-4 flex gap-3">
               <Clock className="mt-0.5 size-5 shrink-0 text-primary" />
               <p className="text-base">
-                {site.hoursSummary}
-                <br />
-                {site.hoursNote && <span className="text-muted-foreground">{site.hoursNote}</span>}
+                Today: {hoursLine}
+                {hoursNote && <span className="text-muted-foreground"> · {hoursNote}</span>}
               </p>
             </div>
           )}
