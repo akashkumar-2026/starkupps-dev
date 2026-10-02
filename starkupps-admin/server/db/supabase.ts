@@ -1,15 +1,22 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../shared/supabase.types";
 import { ENV } from "../config/env";
-import WS from "ws";
+import { nodeFetch, ResilientWebSocket } from "./net";
 
-// Polyfill WebSocket for Node 20 (Supabase Realtime requires it)
+// Polyfill WebSocket for Node 20 (Supabase Realtime requires it). The subclass
+// resolves IPv4-first and reuses keep-alive sockets — see ./net.ts for why.
 if (typeof (globalThis as any).WebSocket === "undefined") {
-  (globalThis as any).WebSocket = WS;
+  (globalThis as any).WebSocket = ResilientWebSocket;
 }
 
 let adminClient: SupabaseClient<Database> | null = null;
 
+/**
+ * The single service-role Supabase client.
+ *
+ * A module-level singleton: auth state, realtime socket and connection pool are
+ * all shared, so per-request work never re-resolves DNS or re-handshakes TLS.
+ */
 export function getSupabaseAdmin(): SupabaseClient<Database> {
   if (adminClient) return adminClient;
   const url = ENV.supabaseUrl;
@@ -18,6 +25,8 @@ export function getSupabaseAdmin(): SupabaseClient<Database> {
     throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing");
   adminClient = createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Route PostgREST through the IPv4-first keep-alive transport.
+    global: { fetch: nodeFetch },
   });
   return adminClient;
 }
@@ -42,17 +51,14 @@ export async function getSql() {
 /**
  * Open the pooler connection at boot rather than on the first request.
  *
- * Measured from a cold start: the first pooled statement took ~7s and the first
- * PostgREST call took ~49s (DNS + TLS + PostgREST schema-cache warm-up). Paying
- * that on the login path — or, worse, on the per-request user lookup, which has
- * no timeout at all — makes the panel unusable for the first minute after every
- * deploy. Warming here moves the cost into startup, where it is invisible.
+ * Also pins the first PostgREST round-trip so its cost lands in startup rather
+ * than on the login path. The 8 s race is generous now that the transport
+ * resolves in milliseconds; it only exists so a dead database cannot block boot.
  */
 export async function warmDatabase(): Promise<void> {
   try {
     const sql = await getSql();
     await sql.unsafe("SELECT 1");
-    // Touch PostgREST too, so its schema cache is hot before the first user.
     const supabase = getSupabaseAdmin();
     await Promise.race([
       supabase.from("users").select("id").limit(1),
@@ -62,5 +68,25 @@ export async function warmDatabase(): Promise<void> {
   } catch (e: any) {
     // Non-fatal: the app still starts and each request falls back as needed.
     console.warn("[db] warm-up skipped:", e?.message ?? e);
+  }
+}
+
+/** Close pooled sockets. Used by tests and graceful shutdown. */
+export async function closeDatabase(): Promise<void> {
+  if (sqlInstance) {
+    try {
+      await sqlInstance.end({ timeout: 5 });
+    } catch {
+      /* already closed */
+    }
+    sqlInstance = null;
+  }
+  if (adminClient) {
+    try {
+      await adminClient.realtime.disconnect();
+    } catch {
+      /* never connected */
+    }
+    adminClient = null;
   }
 }
