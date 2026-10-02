@@ -29,6 +29,9 @@ const ChangePasswordPage = lazy(
 const SecuritySessionsPage = lazy(
   () => import("@/features/settings/SecuritySessionsPage")
 );
+const SiteContentSettingsPage = lazy(
+  () => import("@/features/settings/SiteContentSettingsPage")
+);
 
 const withSuspense = (node: ReactNode) => (
   <Suspense fallback={<PageLoading />}>{node}</Suspense>
@@ -115,6 +118,7 @@ export function AppRoutes() {
         {params => workspace("staff", Number(params.id))}
       </Route>
       <Route path="/settings">{workspace("settings")}</Route>
+      <Route path="/settings/site">{guard(<SiteContentSettingsPage />)}</Route>
       <Route path="/outlets">{workspace("outlets")}</Route>
       <Route path="/outlets/:id">
         {params => workspace("outlets", Number(params.id))}
