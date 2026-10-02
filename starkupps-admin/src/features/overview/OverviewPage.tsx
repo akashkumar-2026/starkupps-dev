@@ -2,27 +2,37 @@ import { MetricCard } from "@/components/shared/MetricCard";
 import { PageHeading } from "@/components/shared/PageHeading";
 import { ErrorPanel, PageLoading } from "@/components/shared/StatePanels";
 import { trpc } from "@/api/trpc";
-import { useAdminStream } from "@/hooks/use-admin-stream";
+import {
+  useAdaptiveRefetchInterval,
+  useAdminStream,
+} from "@/hooks/use-admin-stream";
 import { useShiftScope } from "@/state/shift-scope";
 import { apiError } from "@/utils/errors";
 import { inr } from "@/utils/format";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, Clock3 } from "lucide-react";
+import { useCallback } from "react";
 import { Link } from "wouter";
 
 export default function OverviewPage() {
   const shiftScope = useShiftScope();
+  // The dashboard counters are driven by the relay; polling at its responsive
+  // 30 s only makes sense while that relay is unavailable.
+  const dashboardPollMs = useAdaptiveRefetchInterval(180_000, 30_000);
   const metrics = trpc.admin.dashboard.useQuery(
     shiftScope.shiftId ? { shiftId: shiftScope.shiftId } : undefined,
-    { refetchInterval: 30_000 }
+    { refetchInterval: dashboardPollMs }
   );
   const utils = trpc.useUtils();
+  const resync = useCallback(() => {
+    void utils.admin.dashboard.invalidate();
+  }, [utils]);
   useAdminStream({
     enabled: true,
     topic: "orders",
-    onEvent: () => {
-      void utils.admin.dashboard.invalidate();
-    },
+    onEvent: resync,
+    // Re-sync on every (re)subscribe so a reconnect cannot leave stale counters.
+    onSync: resync,
   });
   if (metrics.isLoading) return <PageLoading />;
   if (metrics.isError)
