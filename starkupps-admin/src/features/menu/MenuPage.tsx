@@ -28,8 +28,9 @@ import {
 } from "@/components/shared/StatePanels";
 import { apiError } from "@/utils/errors";
 import { inr } from "@/utils/format";
+import { useAdminStream } from "@/hooks/use-admin-stream";
 import { Edit3, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { CategoryDialog } from "./CategoryDialog";
@@ -102,6 +103,32 @@ export default function MenuPage() {
     },
   });
   const categories = query.data?.categories ?? [];
+  /**
+   * Live menu changes.
+   *
+   * An item or variant edited in another tab (or by the storefront's own
+   * availability toggle) used to require a manual reload to appear here. The
+   * relay invalidates on change and re-syncs on every reconnect, so nothing is
+   * missed after a dropped socket.
+   */
+  const menuResync = useCallback(() => {
+    void utils.admin.menu.list.invalidate();
+  }, [utils]);
+  useAdminStream({
+    enabled: true,
+    topic: "menu_items",
+    onEvent: menuResync,
+    onSync: menuResync,
+  });
+  const menuItemResync = useCallback(() => {
+    void utils.admin.menu.list.invalidate();
+  }, [utils]);
+  useAdminStream({
+    enabled: true,
+    topic: "menu_categories",
+    onEvent: menuItemResync,
+    onSync: menuItemResync,
+  });
   return (
     <>
       <PageHeading
