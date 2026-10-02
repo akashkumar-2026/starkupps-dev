@@ -754,6 +754,44 @@ export const outletsRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message: updErr.message,
         });
+
+      // Hours live in two places: the outlet's own opening/closing pair and the
+      // per-day `outlet_hours` rows. The storefront derives its open/closed badge
+      // from the per-day rows, so leaving them stale after an owner moves the
+      // outlet's opening time is what made the site show the wrong hours.
+      //
+      // Only a uniform weekly schedule is rewritten: if the owner has deliberately
+      // given individual days different times, those rows are the source of truth
+      // and overwriting them with the outlet default would destroy that work.
+      const hoursMoved =
+        cur.openingTime !== data.openingTime ||
+        cur.closingTime !== data.closingTime;
+      if (hoursMoved) {
+        const { data: rows } = await supabase
+          .from("outlet_hours")
+          .select("dayOfWeek,isOpen,openTime,closeTime")
+          .eq("outletId", id);
+        const openDays = (rows ?? []).filter(
+          (row: any) => row.isOpen && row.openTime && row.closeTime
+        );
+        const uniform =
+          openDays.length === 0 ||
+          (cur.openingTime === openDays[0].openTime &&
+            cur.closingTime === openDays[0].closeTime);
+        if (uniform) {
+          for (const row of openDays as any[]) {
+            await supabase
+              .from("outlet_hours")
+              .update({
+                openTime: data.openingTime,
+                closeTime: data.closingTime,
+              })
+              .eq("outletId", id)
+              .eq("dayOfWeek", row.dayOfWeek);
+          }
+        }
+      }
+
       await recordAudit({
         actorUserId: ctx.user.id,
         entityType: "outlet",
