@@ -9,12 +9,15 @@ import {
 import { PageHeading } from "@/components/shared/PageHeading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAdminStream } from "@/hooks/use-admin-stream";
+import {
+  useAdaptiveRefetchInterval,
+  useAdminStream,
+} from "@/hooks/use-admin-stream";
 import { useShiftScope } from "@/state/shift-scope";
 import { apiError } from "@/utils/errors";
 import { inr } from "@/utils/format";
 import { Plus, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -56,23 +59,29 @@ function LegacyOrdersPage({ detailId }: { detailId?: number }) {
     }),
     [cursor, search, shiftScope.shiftId, status]
   );
+  // Fast poll only while the relay is down; a live stream makes it a safety net.
+  const ordersPollMs = useAdaptiveRefetchInterval(120_000, 15_000);
   const query = trpc.admin.orders.list.useQuery(input, {
-    refetchInterval: 15_000,
+    refetchInterval: ordersPollMs,
   });
   const detail = trpc.admin.orders.byId.useQuery(
     { id: detailId ?? 0 },
     { enabled: Boolean(detailId) }
   );
   const utils = trpc.useUtils();
-  // Live updates: SSE relay invalidates instantly; the 15s interval is the fallback.
+  // Live updates: SSE relay invalidates instantly; polling is the fallback, and
+  // only runs at its responsive interval while the relay is down.
+  const resync = useCallback(() => {
+    void utils.admin.orders.list.invalidate();
+    void utils.admin.dashboard.invalidate();
+    if (detailId) void utils.admin.orders.byId.invalidate({ id: detailId });
+  }, [utils, detailId]);
   useAdminStream({
     enabled: true,
     topic: "orders",
-    onEvent: () => {
-      void utils.admin.orders.list.invalidate();
-      void utils.admin.dashboard.invalidate();
-      if (detailId) void utils.admin.orders.byId.invalidate({ id: detailId });
-    },
+    onEvent: resync,
+    // A reconnect may have missed changes while the socket was down.
+    onSync: resync,
   });
   const update = trpc.admin.orders.updateStatus.useMutation({
     onMutate: async values => {
