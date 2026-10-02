@@ -64,13 +64,55 @@ function AccessBoundary({
   children: ReactNode;
   view: View;
 }) {
-  const { user, staffRole, loading, logout, outletDenied } = useAuth();
+  const {
+    user,
+    staffRole,
+    loading,
+    logout,
+    outletDenied,
+    error: authError,
+    refresh,
+  } = useAuth();
   const shiftList = trpc.shifts.list.useQuery(undefined, {
     enabled: Boolean(user && staffRole),
   });
   const [shiftScopeId, setShiftScopeId] = useState<number | undefined>();
   const [, setLocation] = useLocation();
   if (loading) return <PageLoading />;
+  // The session check itself failed. Previously this collapsed into the same
+  // dead end as an unapproved account, so a dropped connection or a gateway 503
+  // told the owner their staff profile needed approval — which was never true and
+  // left no way forward.
+  if (!user && authError) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#F4F0E9] p-5">
+        <div className="max-w-md rounded-[18px] border border-[#D8CDC0] bg-[#FCFAF6] p-7 text-center shadow-[0_10px_28px_rgba(55,38,25,0.06)]">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[#211B18] text-white text-sm font-bold">
+            SK
+          </div>
+          <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.14em] text-[#A83825]">
+            Connection problem
+          </p>
+          <h1 className="mt-2 text-2xl font-extrabold tracking-[-0.05em]">
+            We couldn&apos;t check your session.
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-[#776A5E]">{authError}</p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <Button onClick={() => void refresh()} className="text-xs">
+              Try again
+            </Button>
+            <Button
+              onClick={() => logout()}
+              variant="outline"
+              className="border-[#D8CDC0] text-xs"
+            >
+              Sign out
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   // ProtectedRoute already handles unauth; this is extra defense
   if (!user || !staffRole) {
     return (
