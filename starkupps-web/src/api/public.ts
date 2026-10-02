@@ -18,6 +18,8 @@ import type {
   PublicInstagramFeed,
   PublicMenu,
   PublicOutlet,
+  PublicReview,
+  PublicSiteSettings,
 } from "@/types";
 import type { ChargeQuote, ApiOrderType } from "@/types/orders";
 
@@ -57,8 +59,11 @@ function trpcUrl(procedure: string, input?: unknown): string {
   return `${trpcApiBase}/${procedure}?input=${encodeURIComponent(superjson.stringify(input))}`;
 }
 
-async function trpcQuery<T>(procedure: string, input?: unknown): Promise<T> {
-  const response = await fetch(trpcUrl(procedure, input), { credentials: "include" });
+async function trpcQuery<T>(procedure: string, input?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(trpcUrl(procedure, input), {
+    credentials: "include",
+    signal: signal ?? null,
+  });
   if (!response.ok) {
     throw new ApiError(`tRPC ${procedure} failed: ${response.status}`, response.status, procedure);
   }
@@ -107,12 +112,35 @@ export function fetchMenu(outletId?: number | null, signal?: AbortSignal): Promi
   );
 }
 
+/**
+ * Storefront business facts: contact details, hours, FSSAI licence, hero copy,
+ * the stats strip, the trust claims and gallery images.
+ *
+ * Served from `public.site_settings` by the gateway, which is what makes them
+ * editable from the admin panel instead of being compiled into this bundle.
+ */
+export function fetchSiteSettings(signal?: AbortSignal): Promise<PublicSiteSettings> {
+  return queryWithFallback<PublicSiteSettings>("/site", "public.site", {}, signal);
+}
+
+/** Customer reviews, from `public.testimonials` (Admin > Content > Testimonials). */
+export function fetchReviews(signal?: AbortSignal): Promise<PublicReview[]> {
+  return queryWithFallback<PublicReview[]>("/reviews", "public.reviews", {}, signal);
+}
+
 export function fetchInstagram(signal?: AbortSignal): Promise<PublicInstagramFeed> {
   // Not transactional: honour the endpoint's own caching to protect its budget.
   return withFallback(
     () => apiGetCached<PublicInstagramFeed>(`${publicApiBase}/instagram`, { signal }),
     () => trpcQuery<PublicInstagramFeed>("public.instagram", {}),
   );
+}
+
+export function fetchInstagramThumbnails(
+  shortcodes: string[],
+  signal?: AbortSignal,
+): Promise<Record<string, string | null>> {
+  return trpcQuery("public.instagramThumbnails", { shortcodes }, signal);
 }
 
 export function validateCoupon(input: CouponValidationInput): Promise<CouponValidation> {
