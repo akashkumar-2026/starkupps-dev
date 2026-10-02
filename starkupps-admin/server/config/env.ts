@@ -2,16 +2,31 @@ import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/*
+/**
  * Load this package's .env, then the workspace root's, so a shared Supabase
  * access token can live one level up. `quiet` suppresses dotenv's startup
  * banner — a server should not print marketing tips into production logs.
+ *
+ * Candidates are resolved from `process.cwd()` as well as from this file's own
+ * directory, because `npm run build` bundles this module into `dist/index.js`:
+ * `import.meta.url` then points at `dist/`, so the two `../../` paths that are
+ * correct when running from `server/config/` resolve to the workspace root and
+ * one level above it instead. The package's own `.env` was therefore never read
+ * by a production build, and startup failed with "SESSION_SECRET is required"
+ * even though a perfectly good `.env` sat next to `dist/`.
+ *
+ * Order matters: the package's own file wins over the workspace root, and an
+ * already-set process variable always wins over both (dotenv does not
+ * overwrite), so real environment variables in production are untouched.
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
-for (const file of [
+const cwd = process.cwd();
+const candidates = [
+  path.resolve(cwd, ".env"),
   path.resolve(here, "../../.env"),
   path.resolve(here, "../../../.env"),
-]) {
+];
+for (const file of new Set(candidates)) {
   dotenv.config({ path: file, quiet: true });
 }
 
@@ -100,7 +115,16 @@ export const ENV = {
   cookieName: getEnv("COOKIE_NAME", "app_session_id"),
 
   // App URL
-  appUrl: getEnv("APP_URL", getEnv("VITE_APP_URL", "http://localhost:5173")),
+  // Default is the deployed Cloud Run origin. Override with APP_URL for a
+  // different deployment or for local development; the https check below
+  // depends on this being the public origin, because cookies are Secure.
+  appUrl: getEnv(
+    "APP_URL",
+    getEnv(
+      "VITE_APP_URL",
+      "https://starkupps-admin-261175458017.asia-northeast2.run.app"
+    )
+  ),
 
   // ── Reverse proxy / TLS termination ──────────────────────────────────────
   // Whether the app sits behind a trusted reverse proxy or CDN. Governs which
