@@ -15,7 +15,7 @@ export function Header() {
   const [authOpen, setAuthOpen] = useState(false);
 
   return (
-    <header className="material sticky top-0 z-30 border-b border-border">
+    <header className="material sticky top-0 z-header border-b border-border">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4">
         <Link to="/" className="font-display text-xl font-semibold tracking-tight">
           StarKupps
