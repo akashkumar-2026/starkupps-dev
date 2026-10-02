@@ -7,6 +7,7 @@ import { inr } from "@/utils/format";
 import { springs } from "@/utils/motion";
 import { cn } from "@/utils/cn";
 import type { DisplayMenuItem } from "@/types/menu";
+import { CategoryImage } from "@/features/menu/category-images";
 import type { SelectedModifier } from "@/types/orders";
 
 export function ItemSheet({
@@ -74,7 +75,7 @@ export function ItemSheet({
         <>
           <motion.div
             key="scrim"
-            className="fixed inset-0 z-40 bg-foreground/45"
+            className="fixed inset-0 z-sheet-scrim bg-foreground/45"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -83,7 +84,7 @@ export function ItemSheet({
           />
           <motion.div
             key="sheet"
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[88svh] overflow-y-auto rounded-t-3xl border border-border bg-card shadow-sheet sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[27rem] sm:max-h-none sm:rounded-t-none sm:rounded-l-3xl"
+            className="fixed inset-x-0 bottom-0 z-sheet max-h-[88svh] overflow-y-auto rounded-t-3xl border border-border bg-card shadow-sheet sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[27rem] sm:max-h-none sm:rounded-t-none sm:rounded-l-3xl"
             style={{ transformOrigin }}
             initial={reduced ? { opacity: 0 } : { opacity: 0, y: 40, scale: 0.96 }}
             animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
@@ -94,10 +95,9 @@ export function ItemSheet({
             aria-label={item.name}
           >
             <div className="relative overflow-hidden">
-              <img
-                src={item.image}
-                alt={item.name}
-                loading="lazy"
+              <CategoryImage
+                url={item.imageUrl}
+                name={item.name}
                 className={cn(
                   "h-44 w-full object-cover sm:h-56",
                   isComingSoon && "blur-[8px] scale-105",
@@ -251,7 +251,7 @@ export function ItemSheet({
                     price: selectedVariant.effectivePrice,
                   };
                   addLine({
-                    product: { id: Number(item.id), name: item.name, image: item.image },
+                    product: { id: Number(item.id), name: item.name, image: item.imageUrl },
                     unitPrice,
                     optionLabels: labels,
                     quantity: qty,
