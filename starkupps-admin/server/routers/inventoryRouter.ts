@@ -124,11 +124,21 @@ async function requireAdjustment(
   return role;
 }
 
+/**
+ * Cap on rows pulled by the aggregate helpers.
+ *
+ * These endpoints answer "how healthy is our stock", not "list the catalogue", so
+ * they only need a bounded window. The list views (`inventory.list`,
+ * `inventory.byId`) pass their own limits or filter by id.
+ */
+const INVENTORY_SCAN_CAP = 2000;
+
 async function inventoryRows(opts?: {
   outletId?: number | null;
   scope?: number[] | null;
   categoryId?: number | null;
   supplierId?: number | null;
+  itemId?: number;
   limit?: number;
 }) {
   const supabase = getSupabaseAdmin();
@@ -138,6 +148,7 @@ async function inventoryRows(opts?: {
   // Push outlet scope and simple id filters into SQL and bound the result set,
   // instead of loading every inventory item (and every batch) into memory.
   let itemsQuery: any = supabase.from("inventory_items").select("*");
+  if (opts?.itemId) itemsQuery = itemsQuery.eq("id", opts.itemId);
   if (opts?.outletId) itemsQuery = itemsQuery.eq("outletId", opts.outletId);
   else if (opts?.scope && opts.scope.length) {
     itemsQuery =
@@ -151,7 +162,8 @@ async function inventoryRows(opts?: {
     itemsQuery = itemsQuery.eq("categoryId", opts.categoryId);
   if (opts?.supplierId)
     itemsQuery = itemsQuery.eq("supplierId", opts.supplierId);
-  itemsQuery = itemsQuery.limit(opts?.limit ?? 5000);
+  // `itemId` already bounds the result to a single row.
+  itemsQuery = itemsQuery.limit(opts?.limit ?? INVENTORY_SCAN_CAP);
 
   const { data: items, error: itemsErr } = await itemsQuery;
   if (itemsErr)
@@ -189,11 +201,19 @@ async function inventoryRows(opts?: {
 
   const filtered = (items ?? []) as any[];
 
+  // Group batches by item once. The previous code called `batches.filter(...)`
+  // inside `items.map(...)`, which is O(items × batches) — 2 000 items against
+  // 10 000 batches is 20M comparisons on every aggregate endpoint.
+  const batchesByItem = new Map<number, any[]>();
+  for (const batch of batches) {
+    if (decimal(batch.quantity) <= 0) continue;
+    const list = batchesByItem.get(batch.inventoryItemId);
+    if (list) list.push(batch);
+    else batchesByItem.set(batch.inventoryItemId, [batch]);
+  }
+
   return filtered.map((row: any) => {
-    const itemBatches = batches.filter(
-      (batch: any) =>
-        batch.inventoryItemId === row.id && decimal(batch.quantity) > 0
-    );
+    const itemBatches = batchesByItem.get(row.id) ?? [];
     const earliestExpiry =
       itemBatches
         .map((batch: any) => dateFrom(batch.expiryDate))
@@ -258,7 +278,10 @@ async function buildStockHealth(
 }
 
 async function itemDetail(id: number) {
-  const items = (await inventoryRows()).filter(item => item.id === id);
+  // Was `(await inventoryRows()).filter(item => item.id === id)` — an unfiltered
+  // scan of up to 5 000 items plus every batch, to return exactly one row. Filter
+  // by id in the query instead.
+  const items = await inventoryRows({ itemId: id });
   const item = items[0];
   if (!item)
     throw new TRPCError({
@@ -1568,7 +1591,7 @@ export const inventoryRouter = router({
       const monthStart = new Date();
       monthStart.setDate(1);
       monthStart.setHours(0, 0, 0, 0);
-      let wastageValue = 0;
+      let wastageValue: number | null = 0;
       try {
         const { data: wastages } = await supabase
           .from("wastage_records")
@@ -1585,8 +1608,15 @@ export const inventoryRouter = router({
           (sum: number, w: any) => sum + Number(w.estimatedCost ?? 0),
           0
         );
-      } catch {
-        wastageValue = rows.filter(r => r.status === "expired").length * 120;
+      } catch (e) {
+        // Previously this fell back to `expiredCount * 120`, which reported a
+        // made-up rupee figure as a real KPI. A wastage value we cannot compute is
+        // unknown, not zero and not invented — surface null so the UI can say so.
+        wastageValue = null;
+        console.warn(
+          "[inventory.overview] wastage value unavailable:",
+          (e as Error)?.message ?? e
+        );
       }
       let pendingTransfers = 0;
       try {
