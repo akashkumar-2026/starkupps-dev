@@ -14,7 +14,9 @@ COPY public ./public
 COPY shared ./shared
 COPY server ./server
 COPY src ./src
-COPY dev ./dev
+# `dev/mock-api.ts` was removed, so there is no `dev/` directory to copy. A
+# `COPY dev ./dev` for a path that does not exist aborts the build, which is why
+# the Cloud Run deploy from this repository was failing.
 
 # Produces dist/index.js (server bundle) and dist/public (client bundle).
 RUN npm run build
