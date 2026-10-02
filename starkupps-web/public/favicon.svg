@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="StarKupps">
+  <rect width="64" height="64" rx="14" fill="#C9622F" />
+  <!-- Cup body: tapered from y=22 (half-width 13) to y=48 (half-width 9). -->
+  <path d="M16 22h26l-4 26h-18z" fill="#FAF6F0" />
+  <!-- Handle -->
+  <path
+    d="M42 26.5a8.5 8.5 0 0 1 0 11"
+    fill="none"
+    stroke="#FAF6F0"
+    stroke-width="4"
+    stroke-linecap="round"
+  />
+  <!-- Saucer -->
+  <rect x="14" y="50" width="32" height="5" rx="2.5" fill="#FAF6F0" />
+</svg>
