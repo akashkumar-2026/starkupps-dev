@@ -306,6 +306,29 @@ export const publicRouter = router({
     }));
   }),
 
+  /** Active customer-facing FAQs, ordered as configured in Admin > Content. */
+  faqs: publicProcedure.query(async ({ ctx }) => {
+    publicRateLimit(clientThrottleKey(ctx.req, "site_faqs"));
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("faqs")
+      .select("id,question,answer,position")
+      .eq("active", true)
+      .order("position", { ascending: true })
+      .order("id", { ascending: true });
+    if (error)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    return ((data ?? []) as any[]).map(row => ({
+      id: Number(row.id),
+      question: String(row.question ?? ""),
+      answer: String(row.answer ?? ""),
+      position: Number(row.position ?? 0),
+    }));
+  }),
+
   // ── Outlets: only active, limited fields (no internal metrics) ──
   outlets: router({
     list: publicProcedure
