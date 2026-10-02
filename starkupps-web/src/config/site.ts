@@ -1,28 +1,51 @@
 /**
- * Single source of truth for brand, contact and legal copy.
+ * Brand and contact facts, read live from `public.site_settings`.
  *
- * These values appear in the footer, the location section and the about page;
- * keeping them here stops the three from drifting apart.
+ * There is deliberately no static copy of the phone number, address, hours or
+ * FSSAI licence anywhere in this app any more. Those used to be literals in this
+ * file and in three components, which meant the admin panel could not correct
+ * them and the site asserted them on every page load regardless of what the
+ * database held.
+ *
+ * Use `useSiteSettings()` rather than importing from here.
  */
+import type { PublicSiteSettings } from "@/types/site";
 
-export const SITE = {
-  name: "StarKupps",
-  tagline: "Coffee, Pizza & Burgers in Munger",
-  address: "Azad Chowk, Infront Of Jain Dharamshala, Dilawer Pur, Munger, Bihar",
-  addressDetail: "Azad Chowk, Infront Of Jain Dharamshala, Shah Family, Dilawer Pur, Munger, Bihar",
-  /** 10-digit Indian mobile, digits only. */
-  phoneDigits: "918252433504",
-  /** Human-readable E.164 form used in `tel:` links and copy. */
-  phoneDisplay: "+91 82524 33504",
-  hours: "10:00 AM – 11:00 PM",
-  hoursShort: "10 AM – 11 PM",
-  fssai: "10424998000217",
-  mapsQuery: "StarKupps+Main+Road+Munger+Bihar",
-} as const;
+export type SiteSettings = PublicSiteSettings;
 
-export const SITE_LINKS = {
-  directions: `https://maps.google.com/?q=${SITE.mapsQuery}`,
-  mapEmbed: `https://www.google.com/maps?q=${SITE.mapsQuery}&output=embed`,
-  whatsapp: `https://wa.me/${SITE.phoneDigits}`,
-  tel: `tel:+${SITE.phoneDigits}`,
-} as const;
+/** Built from live settings. Empty strings yield no link, by design. */
+export function siteLinks(site: SiteSettings) {
+  const mapsQuery = site.mapsQuery.trim();
+  const mapsSearch = mapsQuery || site.address.trim();
+  return {
+    directions: mapsSearch ? `https://maps.google.com/?q=${encodeURIComponent(mapsSearch)}` : null,
+    mapEmbed: mapsSearch
+      ? `https://www.google.com/maps?q=${encodeURIComponent(mapsSearch)}&output=embed`
+      : null,
+    whatsapp: site.whatsappNumber.trim() ? `https://wa.me/${site.whatsappNumber.trim()}` : null,
+    tel: site.phoneDigits.trim() ? `tel:+${site.phoneDigits.trim()}` : null,
+  } as const;
+}
+
+/** `918252433504` → `+91 82524 33504`, best effort for display only. */
+export function phoneDisplay(phoneDigits: string): string {
+  const digits = phoneDigits.trim();
+  if (!digits) return "";
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return `+91 ${digits.slice(2, 4)} ${digits.slice(4, 8)} ${digits.slice(8)}`;
+  }
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  }
+  return `+${digits}`;
+}
+
+/** Up to two uppercase initials for an avatar/quote marker. */
+export function initialsOf(name: string): string {
+  const parts = name
+    .split(/\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("");
+}
