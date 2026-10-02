@@ -510,103 +510,72 @@ export const adminRouter = router({
         const { assertOutletAccess } = await import("../db/index");
         await assertOutletAccess(ctx.user, input.outletId);
       }
-      const supabase = getSupabaseAdmin();
-      // Bound the scan: with no explicit range the dashboard evaluates the last
-      // 30 days (with a hard cap) instead of loading the entire order history.
+      // Default window is the last 30 days; the aggregates below make the cap on
+      // scanned rows irrelevant.
       const to = input?.to ?? new Date();
       const from = input?.from ?? new Date(to.getTime() - 30 * 86_400_000);
-      let query = supabase
-        .from("orders")
-        .select("*")
-        .gte("createdAt", from.toISOString())
-        .lte("createdAt", to.toISOString())
-        .order("createdAt", { ascending: false })
-        .limit(20_000);
-      if (input?.shiftId) query = query.eq("shiftId", input.shiftId);
-      if (input?.outletId) query = query.eq("outletId", input.outletId);
-      else if (scope !== null) {
-        if (scope.length === 1) query = query.eq("outletId", scope[0]);
-        else query = query.in("outletId", scope);
-      }
-      const { data: orderRowsRaw, error } = await query;
-      if (error)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      const orderRows = (orderRowsRaw ?? []) as any[];
-      const paid = orderRows.filter(
-        (order: any) =>
-          order.paymentStatus === "paid" && order.status !== "cancelled"
-      );
-      const openCount = orderRows.filter((order: any) =>
-        ["new", "preparing", "ready"].includes(order.status)
-      ).length;
-      const totalRevenue = paid.reduce(
-        (sum: number, order: any) => sum + decimal(order.total),
-        0
-      );
-      const completed = orderRows.filter(
-        (order: any) => order.status === "completed"
-      );
-      const prepMinutes = completed.map((order: any) =>
-        Math.max(
-          0,
-          (new Date(order.updatedAt).getTime() -
-            new Date(order.createdAt).getTime()) /
-            60_000
-        )
-      );
-      const customerIds = paid
-        .map((order: any) => order.customerId)
-        .filter((id: any): id is number => id !== null && id !== undefined);
-      let repeatRows: any[] = [];
-      if (customerIds.length) {
-        try {
-          const sql = await getSql();
-          // Aggregate via raw sql for repeat detection, scoped to the customers
-          // seen in this range rather than scanning the full order history.
-          repeatRows = await sql.unsafe(
-            `SELECT "customerId", count(*)::int as count FROM "orders" WHERE "customerId" = ANY($1) AND "status" != 'cancelled' GROUP BY "customerId"`,
-            [customerIds]
-          );
-        } catch {
-          // fallback via supabase client: fetch all relevant orders and group in JS
-          const { data: allForRepeat } = await supabase
-            .from("orders")
-            .select("customerId,status")
-            .not("customerId", "is", null)
-            .neq("status", "cancelled");
-          const countMap = new Map<number, number>();
-          for (const r of (allForRepeat ?? []) as any[]) {
-            countMap.set(r.customerId, (countMap.get(r.customerId) ?? 0) + 1);
+      // ── Aggregates in Postgres, not in JavaScript ──
+      //
+      // This used to `select("*")` up to 20 000 order rows and reduce them in
+      // JS, on a page the panel polls every 30 s. At 50 000 orders that is a
+      // 20 000-row transfer per poll for five numbers. The counts below are
+      // index-assisted aggregates over the same (createdAt, outletId) range, so
+      // the payload is one row regardless of history size.
+      const sql = await getSql();
+      const outletIds =
+        input?.outletId != null
+          ? [input.outletId]
+          : scope !== null
+            ? scope
+            : null;
+
+      const rows = await sql`
+        SELECT
+          count(*) FILTER (WHERE o."status" IN ('new','preparing','ready'))::int AS open_count,
+          count(*) FILTER (WHERE o."status" = 'completed')::int              AS served_count,
+          coalesce(sum(o."total") FILTER (
+            WHERE o."paymentStatus" = 'paid' AND o."status" <> 'cancelled'
+          ), 0)                                                              AS total_revenue,
+          coalesce(avg(
+            greatest(0, extract(epoch FROM (o."updatedAt" - o."createdAt")) / 60)
+          ) FILTER (WHERE o."status" = 'completed'), 0)                      AS average_prep,
+          -- One entry per paid order, matching the previous per-order weighting.
+          count(o."customerId") FILTER (
+            WHERE o."paymentStatus" = 'paid' AND o."status" <> 'cancelled'
+          )::int                                                           AS paid_customer_total,
+          count(DISTINCT o."customerId") FILTER (
+            WHERE o."paymentStatus" = 'paid' AND o."status" <> 'cancelled'
+            AND o."customerId" IN (
+              SELECT c."customerId" FROM public.orders c
+              WHERE c."customerId" IS NOT NULL
+                AND c."status" <> 'cancelled'
+              GROUP BY c."customerId" HAVING count(*) > 1
+            )
+          )::int                                                           AS repeat_customer_total
+        FROM public.orders o
+        WHERE o."createdAt" >= ${from}
+          AND o."createdAt" <= ${to}
+          ${input?.shiftId ? sql`AND o."shiftId" = ${input.shiftId}` : sql``}
+          ${
+            outletIds === null
+              ? sql``
+              : outletIds.length === 1
+                ? sql`AND o."outletId" = ${outletIds[0]}`
+                : sql`AND o."outletId" = ANY(${outletIds})`
           }
-          repeatRows = Array.from(countMap.entries()).map(
-            ([customerId, count]) => ({ customerId, count })
-          );
-        }
-      }
-      const repeatCustomerIds = new Set(
-        repeatRows
-          .filter(row => Number(row.count) > 1)
-          .map(row => row.customerId)
-      );
-      const repeatRate = customerIds.length
-        ? (customerIds.filter(id => repeatCustomerIds.has(id)).length /
-            customerIds.length) *
-          100
-        : 0;
+      `;
+
+      const row = (rows[0] ?? {}) as Record<string, unknown>;
+      const paidCustomerTotal = Number(row.paid_customer_total ?? 0);
+      const repeatCustomerTotal = Number(row.repeat_customer_total ?? 0);
       return {
-        openCount,
-        totalRevenue,
-        servedCount: completed.length,
-        averagePrepMinutes: prepMinutes.length
-          ? prepMinutes.reduce(
-              (sum: number, minutes: number) => sum + minutes,
-              0
-            ) / prepMinutes.length
+        openCount: Number(row.open_count ?? 0),
+        totalRevenue: decimal(row.total_revenue ?? 0),
+        servedCount: Number(row.served_count ?? 0),
+        averagePrepMinutes: Number(row.average_prep ?? 0),
+        repeatRate: paidCustomerTotal
+          ? (repeatCustomerTotal / paidCustomerTotal) * 100
           : 0,
-        repeatRate,
       };
     }),
 
