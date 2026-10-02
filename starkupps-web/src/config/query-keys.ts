@@ -15,4 +15,6 @@ export const queryKeys = {
   site: ["public", "site"] as const,
   /** Customer reviews, from `public.testimonials`. */
   reviews: ["public", "reviews"] as const,
+  /** Active FAQs managed in Admin > Content > FAQs. */
+  faqs: ["public", "faqs"] as const,
 } as const;
