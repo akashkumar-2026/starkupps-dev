@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -230,8 +231,10 @@ function BlocksTab() {
 
 function FaqsTab() {
   const q = trpc.content.faqs.list.useQuery();
+  const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ question: "", answer: "" });
+  const [toggleId, setToggleId] = useState<number | null>(null);
   const create = trpc.content.faqs.create.useMutation({
     onSuccess: () => {
       toast.success("FAQ saved");
@@ -240,6 +243,32 @@ function FaqsTab() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  // `update` requires question + answer, so the current values are resent
+  // alongside the new flag rather than the server being widened.
+  const toggle = trpc.content.faqs.update.useMutation({
+    onSuccess: () => {
+      setToggleId(null);
+      void utils.content.faqs.list.invalidate();
+    },
+    onError: (e: any) => {
+      setToggleId(null);
+      toast.error("Visibility was not changed", {
+        description: e?.message ?? "Please try again.",
+      });
+    },
+  });
+
+  const toggleActive = (faq: any, next: boolean) => {
+    setToggleId(faq.id);
+    toggle.mutate({
+      id: faq.id,
+      question: faq.question,
+      answer: faq.answer,
+      active: next,
+    });
+  };
+
   return (
     <section className="rounded-[14px] border border-[#D6CABD] bg-[#FCFAF6] p-5">
       <div className="flex items-center justify-between">
@@ -268,12 +297,46 @@ function FaqsTab() {
       ) : (
         <div className="mt-4 space-y-2">
           {q.data.map((f: any) => (
-            <div key={f.id} className="rounded-xl border bg-white p-4">
-              <p className="text-sm font-bold">{f.question}</p>
-              <p className="text-xs text-[#6F6257] line-clamp-3">{f.answer}</p>
-              <Badge className="mt-2 border-[#E3D9CE] bg-[#F6F0E8] text-[10px]">
-                {f.active ? "Active" : "Inactive"}
-              </Badge>
+            <div
+              key={f.id}
+              className={`rounded-xl border p-4 ${
+                f.active
+                  ? "border-[#D6CABD] bg-white"
+                  : "border-[#E3D9CE] bg-[#F7F2EB]"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <p
+                  className={`text-sm font-bold ${f.active ? "text-[#211B18]" : "text-[#6F6257]"}`}
+                >
+                  {f.question}
+                </p>
+                {/* Explicit colors on both variants. The shared Badge default is a
+                    translucent primary fill whose text disappears against the
+                    light row background, so status was unreadable. */}
+                <span
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] ${
+                    f.active
+                      ? "border-[#BDE0C8] bg-[#E5F2E9] text-[#2F6947]"
+                      : "border-[#E3D9CE] bg-[#EFE8DF] text-[#6B5F53]"
+                  }`}
+                >
+                  {f.active ? "Live" : "Hidden"}
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs leading-5 text-[#6F6257] line-clamp-3">
+                {f.answer}
+              </p>
+              <label className="mt-3 flex w-fit items-center gap-2 text-[11px] font-bold text-[#5A4E45]">
+                <Switch
+                  checked={Boolean(f.active)}
+                  disabled={toggle.isPending && toggleId === f.id}
+                  onCheckedChange={next => toggleActive(f, next)}
+                  className="data-[state=checked]:bg-[#2F6947]"
+                  aria-label={`Show "${f.question}" on the storefront`}
+                />
+                {f.active ? "Shown on storefront" : "Hidden from storefront"}
+              </label>
             </div>
           ))}
         </div>
