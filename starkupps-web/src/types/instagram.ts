@@ -11,6 +11,7 @@ export type PublicInstagramPost = {
   type: InstagramPostType;
   caption: string | null;
   thumbnailUrl: string | null;
+  previewVideoUrl: string | null;
   sortOrder: number;
   isActive: boolean;
 };
