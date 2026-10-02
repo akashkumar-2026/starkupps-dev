@@ -37,6 +37,7 @@ import { Bell, CommandIcon, Search, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useOutlet } from "@/state/outlet-provider";
+import { RealtimeIndicator } from "@/components/layout/RealtimeIndicator";
 
 type AppHeaderProps = {
   currentView: View;
@@ -88,6 +89,7 @@ export function AppHeader({ currentView, activeShiftName }: AppHeaderProps) {
             {viewLabels[currentView]}
           </span>
         </div>
+        <RealtimeIndicator className="ml-auto" />
 
         <div className="ml-auto flex items-center gap-2">
           <OutletSelector />
