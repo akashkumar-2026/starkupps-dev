@@ -5,6 +5,16 @@
  * string means "not configured" and the storefront renders an honest
  * placeholder or omits the element — it never substitutes a hardcoded value.
  */
+/** One day of the store's weekly schedule, served from `outlet_hours`. */
+export type PublicWeeklyHour = {
+  /** 0 = Sunday, matching JS `Date#getDay()`. */
+  dayOfWeek: number;
+  isOpen: boolean;
+  /** `HH:mm` 24-hour, or null when the day is closed / unset. */
+  openTime: string | null;
+  closeTime: string | null;
+};
+
 export type PublicSiteSettings = {
   brandName: string;
   tagline: string;
@@ -20,6 +30,16 @@ export type PublicSiteSettings = {
   hoursSummary: string;
   hoursShort: string;
   hoursNote: string;
+  /**
+   * IANA zone the store trades in. Munger, Bihar is `Asia/Kolkata`; the store's
+   * own column is used so an outlet elsewhere does not need a code change.
+   */
+  timezone: string;
+  /**
+   * Per-day timings from `outlet_hours` (Admin > Outlets > Operating Hours).
+   * Authoritative for open/closed decisions — `hoursSummary` is owner prose.
+   */
+  weeklyHours: PublicWeeklyHour[];
   fssaiLicense: string;
   heroHeading: string;
   heroSubheading: string;
