@@ -21,7 +21,7 @@ export function StickyCartBar() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 90, opacity: 0 }}
           transition={springs.sheet}
-          className="fixed inset-x-0 bottom-0 z-40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+          className="fixed inset-x-0 bottom-0 z-sticky-bar p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
         >
           <Pressable
             onClick={() => setOpen(true)}
