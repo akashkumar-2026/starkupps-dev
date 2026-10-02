@@ -126,6 +126,10 @@ export async function resolveUserFromRequest(
         u = cached.user;
       } else {
         // Signal infra failure — caller should map to 503, not 401
+        console.warn(
+          "[auth] user lookup failed, no cache:",
+          (dbError as any)?.message ?? dbError
+        );
         throw new Error("AUTH_DB_UNAVAILABLE");
       }
     } else {
@@ -316,9 +320,17 @@ async function startServer() {
       res.setHeader("Access-Control-Allow-Credentials", "true");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    // Must list every header the browser is allowed to send, or the preflight
+    // fails and the browser rejects the response.
+    //
+    // `Cache-Control` was missing here, and the storefront's apiGet sends
+    // `Cache-Control: no-cache` on transactional reads (the menu, outlets).
+    // That made every menu request fail CORS in the browser and render the
+    // "Fresh menu on its way" error card, while the same request from curl
+    // succeeded — curl does not enforce CORS, which is why this survived.
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With"
+      "Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma, x-csrf-token"
     );
     if (req.method === "OPTIONS") return res.status(204).end();
     // Reject cross-origin requests with an untrusted Origin outright.
@@ -459,36 +471,49 @@ async function startServer() {
         .json({ error: "POS session cannot access Admin resources." });
     }
     const topic = String(req.query.topic ?? "orders");
-    if (topic !== "orders" && topic !== "deliveries")
-      return res.status(400).json({ error: "topic must be orders|deliveries" });
-    const { getOutletScope } = await import("./db/index");
-    const scope = await getOutletScope(user);
+    const { RELAY_TABLES } = await import("./realtime");
+    if (!(RELAY_TABLES as readonly string[]).includes(topic))
+      return res
+        .status(400)
+        .json({ error: `topic must be one of ${RELAY_TABLES.join("|")}` });
+
+    // Outlet scoping only applies to the two outlet-scoped topics. Menu and
+    // storefront content are global, so those subscribe once regardless of the
+    // caller's outlet scope — otherwise an owner with no outlet assignment would
+    // silently get no menu events at all.
+    const outletScoped = topic === "orders" || topic === "deliveries";
     let outlets: Array<number | "*">;
-    const param = req.query.outletId;
-    if (param !== undefined && param !== "all") {
-      const oid = Number(param);
-      if (!Number.isInteger(oid) || oid <= 0)
-        return res.status(400).json({ error: "Invalid outletId" });
-      const { assertOutletAccess } = await import("./db/index");
-      try {
-        await assertOutletAccess(user, oid);
-      } catch {
-        return res
-          .status(403)
-          .json({ error: "You do not have access to this outlet." });
-      }
-      outlets = [oid];
-    } else if (scope === null) {
+    if (!outletScoped) {
       outlets = ["*"];
-    } else if (!scope.length) {
-      return res.status(403).json({ error: "No outlet assigned." });
     } else {
-      outlets = scope;
+      const { getOutletScope } = await import("./db/index");
+      const scope = await getOutletScope(user);
+      const param = req.query.outletId;
+      if (param !== undefined && param !== "all") {
+        const oid = Number(param);
+        if (!Number.isInteger(oid) || oid <= 0)
+          return res.status(400).json({ error: "Invalid outletId" });
+        const { assertOutletAccess } = await import("./db/index");
+        try {
+          await assertOutletAccess(user, oid);
+        } catch {
+          return res
+            .status(403)
+            .json({ error: "You do not have access to this outlet." });
+        }
+        outlets = [oid];
+      } else if (scope === null) {
+        outlets = ["*"];
+      } else if (!scope.length) {
+        return res.status(403).json({ error: "No outlet assigned." });
+      } else {
+        outlets = scope;
+      }
     }
     openSse(res);
     const { watchOutlet } = await import("./realtime");
     const unsubs = outlets.map(o =>
-      watchOutlet(topic as "orders" | "deliveries", o, ev => sseSend(res, ev))
+      watchOutlet(topic as any, o, ev => sseSend(res, ev))
     );
     const keepalive = setInterval(() => {
       try {
@@ -524,8 +549,26 @@ async function startServer() {
     });
   });
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  app.get("/api/health", async (_req, res) => {
+    // Reports whether the database and the realtime relay are actually usable.
+    // `hubStatus()` used to exist but nothing ever called it, so a dead relay
+    // looked identical to a healthy one from the outside.
+    const { hubStatus } = await import("./realtime");
+    let db: "ok" | "unreachable" = "ok";
+    try {
+      const { getSql } = await import("./db/supabase");
+      const sql = await getSql();
+      await sql.unsafe("SELECT 1");
+    } catch {
+      db = "unreachable";
+    }
+    const realtime = hubStatus();
+    res.status(db === "ok" ? 200 : 503).json({
+      status: db === "ok" ? "ok" : "degraded",
+      database: db,
+      realtime,
+      timestamp: new Date().toISOString(),
+    });
   });
 
   app.get("/api/auth/me", async (req, res) => {
@@ -693,6 +736,55 @@ async function startServer() {
       sendTrpcError(res, e);
     }
   });
+  // Storefront business facts (contact, hours, hero, stats, trust, gallery).
+  // Cacheable at the edge: it changes only when an owner edits it in the panel.
+  // The SSE relay is not involved — the storefront subscribes to
+  // `site_settings` over Supabase Realtime and refetches on change, so the
+  // short s-maxage is only a safety net for a closed tab.
+  app.get("/api/public/site", async (req, res) => {
+    try {
+      const { createCallerFactory } = await import("./lib/trpc");
+      const { publicRouter } = await import("./routers/publicRouter");
+      const caller = createCallerFactory(publicRouter)({
+        user: null,
+        aud: null,
+        req: req as any,
+        res: res as any,
+      });
+      const data = await (caller as any).site();
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=30, s-maxage=60, stale-while-revalidate=600"
+      );
+      res.json(data);
+    } catch (e: any) {
+      sendTrpcError(res, e);
+    }
+  });
+
+  // Customer reviews for the storefront trust section, managed in
+  // Content > Testimonials. Same caching rationale as /api/public/site.
+  app.get("/api/public/reviews", async (req, res) => {
+    try {
+      const { createCallerFactory } = await import("./lib/trpc");
+      const { publicRouter } = await import("./routers/publicRouter");
+      const caller = createCallerFactory(publicRouter)({
+        user: null,
+        aud: null,
+        req: req as any,
+        res: res as any,
+      });
+      const data = await (caller as any).reviews();
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=30, s-maxage=60, stale-while-revalidate=600"
+      );
+      res.json(data);
+    } catch (e: any) {
+      sendTrpcError(res, e);
+    }
+  });
+
   // Instagram feed. Public read, so it is cacheable at the edge; the storefront
   // section polls on a ~60s window and the Admin panel is the only writer.
   // `stale-while-revalidate` keeps the home page snappy while an edit lands.
