@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { Coffee, Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
+import { FetchErrorState } from "@/components/shared/FetchErrorState";
 import { Pressable } from "@/components/shared/Pressable";
 import { ItemSheet } from "@/features/cart/components/ItemSheet";
+import { useSiteSettings } from "@/features/content/useSiteContent";
 import { inr, slugify } from "@/utils/format";
 import { springs } from "@/utils/motion";
 import { cn } from "@/utils/cn";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
 import type { DisplayCategory, DisplayMenuItem } from "@/types/menu";
-import { categoryImage } from "@/features/menu/category-images";
+import { CategoryImage } from "@/features/menu/category-images";
 
 export function MenuSection({
   category,
@@ -18,6 +20,7 @@ export function MenuSection({
   onCategoryChange: (c: string) => void;
 }) {
   const { data, error, refetch, isRefetching } = usePublicMenu();
+  const { data: site } = useSiteSettings();
   const [active, setActive] = useState<DisplayMenuItem | null>(null);
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
 
@@ -37,7 +40,7 @@ export function MenuSection({
         return {
           id: slug,
           label: c.name,
-          image: c.imageUrl || categoryImage(slug),
+          imageUrl: c.imageUrl ?? null,
           dbId: c.id,
           comingSoon,
           description: c.description ?? null,
@@ -95,7 +98,7 @@ export function MenuSection({
             desc: it.description ?? "",
             price: defaultPrice,
             veg: it.veg,
-            image: it.imageUrl ?? categoryImage(slugify(it.categoryName)),
+            imageUrl: it.imageUrl ?? null,
             comingSoon: itemComingSoon,
             categoryComingSoon: catComingSoon,
             effectiveComingSoon,
@@ -128,7 +131,7 @@ export function MenuSection({
   return (
     <section id="menu" className="mx-auto w-full max-w-6xl scroll-mt-16 px-4 py-14">
       <p className="eyebrow text-primary">Order</p>
-      <h2 className="display-lg mt-2">Built to order, out in minutes.</h2>
+      {site?.menuHeading && <h2 className="display-lg mt-2">{site.menuHeading}</h2>}
 
       <div className="rubber-scroll -mx-4 mt-6 flex gap-2 px-4 pb-1">
         {categories.map((c) => (
@@ -172,37 +175,18 @@ export function MenuSection({
       ) : null}
 
       {error ? (
-        <div className="mt-6 rounded-3xl border border-border bg-card p-8 text-center shadow-card">
-          <div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
-            <Coffee className="size-6" />
-          </div>
-          <h3 className="mt-4 text-base font-semibold">Menu is taking a moment</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            We&apos;re syncing the latest dishes from the kitchen. Please try again — if this keeps
-            happening, our team is on it.
-          </p>
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-            <Pressable
-              onClick={() => refetch()}
-              disabled={isRefetching}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-chip disabled:opacity-50"
-            >
-              <RefreshCw className={cn("size-4", isRefetching && "animate-spin")} />
-              Try again
-            </Pressable>
-            <a
-              href="tel:+918252433504"
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-card px-6 text-sm font-medium"
-            >
-              Call the café
-            </a>
-          </div>
-        </div>
+        <FetchErrorState
+          title="We couldn't load the menu"
+          description="The menu service didn't respond. This is a real failure rather than a delay, so please try again."
+          onRetry={() => refetch()}
+          retrying={isRefetching}
+        />
       ) : null}
 
       {data && !error && categories.length === 0 ? (
         <p className="mt-8 text-center text-sm text-muted-foreground">
-          Menu is being set up — check back in a moment.
+          {site?.menuEmptyMessage ||
+            "The menu has not been published yet. Please check back shortly."}
         </p>
       ) : null}
 
@@ -225,9 +209,9 @@ export function MenuSection({
                   )}
                 >
                   <div className="relative h-48 w-full overflow-hidden bg-muted">
-                    <img
-                      src={activeCat.image}
-                      alt={activeCat.label}
+                    <CategoryImage
+                      url={activeCat.imageUrl}
+                      name={activeCat.label}
                       className={cn(
                         "h-full w-full object-cover",
                         isCatComingSoon && "blur-[7px] scale-105",
@@ -250,9 +234,7 @@ export function MenuSection({
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {activeCat.description || "Chilled and creamy coffee beverages."}
-                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">{activeCat.description}</p>
                   </div>
                 </div>
                 <p className="mt-3 text-center text-xs text-muted-foreground">
@@ -292,10 +274,9 @@ export function MenuSection({
                   )}
                 >
                   <div className="relative size-24 shrink-0 overflow-hidden rounded-2xl bg-muted">
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      loading="lazy"
+                    <CategoryImage
+                      url={item.imageUrl}
+                      name={item.name}
                       className={cn(
                         "size-24 shrink-0 rounded-2xl object-cover",
                         isComingSoon && "blur-[6px] scale-105",
