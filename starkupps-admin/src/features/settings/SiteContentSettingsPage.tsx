@@ -29,6 +29,9 @@ type SiteContentForm = {
   hoursSummary: string;
   hoursShort: string;
   hoursNote: string;
+  openTime: string;
+  closeTime: string;
+  closedDays: string;
   fssaiLicense: string;
   heroHeading: string;
   heroSubheading: string;
@@ -76,6 +79,9 @@ const BLANK: SiteContentForm = {
   hoursSummary: "",
   hoursShort: "",
   hoursNote: "",
+  openTime: "",
+  closeTime: "",
+  closedDays: "",
   fssaiLicense: "",
   heroHeading: "",
   heroSubheading: "",
@@ -143,6 +149,9 @@ export default function SiteContentSettingsPage() {
       hoursSummary: text(s.hoursSummary),
       hoursShort: text(s.hoursShort),
       hoursNote: text(s.hoursNote),
+      openTime: text(s.openTime),
+      closeTime: text(s.closeTime),
+      closedDays: text(s.closedDays),
       fssaiLicense: text(s.fssaiLicense),
       heroHeading: text(s.heroHeading),
       heroSubheading: text(s.heroSubheading),
@@ -231,6 +240,24 @@ export default function SiteContentSettingsPage() {
             {
               title: "Hours & compliance",
               fields: [
+                [
+                  "openTime",
+                  "Opens at",
+                  "Drives the Open/Closed badge on the storefront",
+                  "time",
+                ],
+                [
+                  "closeTime",
+                  "Closes at",
+                  "Earlier than the opening time means it runs past midnight",
+                  "time",
+                ],
+                [
+                  "closedDays",
+                  "Closed days",
+                  "Weekday numbers, 1 = Mon to 7 = Sun. Leave blank for open every day.",
+                  "text",
+                ],
                 ["hoursSummary", "Hours (full)", "10:00 AM – 11:00 PM", "text"],
                 ["hoursShort", "Hours (short)", "10 AM – 11 PM", "text"],
                 [
@@ -352,7 +379,13 @@ export default function SiteContentSettingsPage() {
                       />
                     ) : (
                       <Input
-                        type={kind === "number" ? "number" : "text"}
+                        type={
+                          kind === "number"
+                            ? "number"
+                            : kind === "time"
+                              ? "time"
+                              : "text"
+                        }
                         step={kind === "number" ? "any" : undefined}
                         value={
                           value === null || value === undefined
