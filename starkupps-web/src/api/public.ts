@@ -15,6 +15,7 @@ import type {
   CreateOrderInput,
   CreatedOrder,
   OrderTrackToken,
+  PublicFaq,
   PublicInstagramFeed,
   PublicMenu,
   PublicOutlet,
@@ -126,6 +127,11 @@ export function fetchSiteSettings(signal?: AbortSignal): Promise<PublicSiteSetti
 /** Customer reviews, from `public.testimonials` (Admin > Content > Testimonials). */
 export function fetchReviews(signal?: AbortSignal): Promise<PublicReview[]> {
   return queryWithFallback<PublicReview[]>("/reviews", "public.reviews", {}, signal);
+}
+
+/** Active storefront FAQs, ordered by the position set in Admin. */
+export function fetchFaqs(signal?: AbortSignal): Promise<PublicFaq[]> {
+  return queryWithFallback<PublicFaq[]>("/faqs", "public.faqs", {}, signal);
 }
 
 export function fetchInstagram(signal?: AbortSignal): Promise<PublicInstagramFeed> {
