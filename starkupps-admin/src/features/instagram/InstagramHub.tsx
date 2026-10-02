@@ -79,12 +79,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CircleAlert,
   ExternalLink,
+  Film,
   GripVertical,
   Loader2,
   Pencil,
   Plus,
   RefreshCw,
   Trash2,
+  Upload,
+  X,
 } from "lucide-react";
 import {
   Dialog,
@@ -179,8 +182,8 @@ export default function InstagramHub() {
         </h2>
         <p className="mt-2 text-sm leading-6 text-[#75695E]">
           Paste post and reel permalinks, set the order they appear in, and
-          control the heading. Posts render as official Instagram embeds on the
-          home page — no API keys, nothing to connect.
+          control the heading. Add an optional short MP4 teaser to a reel; the
+          storefront previews it muted for 2.5 seconds and links to Instagram.
         </p>
       </section>
 
@@ -752,19 +755,31 @@ function EditPostDialog({
   onSaved: () => void;
 }) {
   const utils = trpc.useUtils();
-  const all = trpc.instagram.posts.list.useQuery(undefined, { enabled: false });
+  // The duplicate-permalink guard below reads `all.data`. This query used to be
+  // `enabled: false`, so `all.data` was permanently undefined, `clash` was
+  // permanently false, and a second post could be saved against a permalink that
+  // already existed. The unique index on `instagram_posts.shortcode` would then
+  // reject it with a raw database error. Enabling it costs nothing: React Query
+  // dedupes by key, so this shares the in-flight request the list behind the
+  // dialog already has.
+  const all = trpc.instagram.posts.list.useQuery();
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+  const previewVideoInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!post) return;
     setUrl(post.url);
     setCaption(post.caption ?? "");
+    setPreviewVideoUrl(post.previewVideoUrl ?? null);
   }, [post]);
 
   const parsed = useMemo(() => parseInstagramUrl(url), [url]);
   const unchanged = post
-    ? url.trim() === post.url && caption.trim() === (post.caption ?? "")
+    ? url.trim() === post.url &&
+      caption.trim() === (post.caption ?? "") &&
+      previewVideoUrl === (post.previewVideoUrl ?? null)
     : true;
   const clash =
     post && parsed.ok
@@ -787,6 +802,46 @@ function EditPostDialog({
       }),
   });
 
+  const uploadVideo = trpc.instagram.uploadPreviewVideo.useMutation({
+    onSuccess: result => {
+      setPreviewVideoUrl(result.url);
+      toast.success("Preview uploaded", {
+        description: "Save changes to attach the teaser to this reel.",
+      });
+    },
+    onError: error =>
+      toast.error("Preview could not be uploaded", {
+        description: apiError(error),
+      }),
+  });
+
+  const onPreviewVideo = (file: File) => {
+    if (file.type !== "video/mp4") {
+      toast.error("Choose an MP4 video");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Preview video must be 5 MB or smaller");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const data = result.includes(",") ? result.split(",")[1] : result;
+      if (!data) {
+        toast.error("Could not read video file");
+        return;
+      }
+      uploadVideo.mutate({
+        filename: file.name,
+        contentType: "video/mp4",
+        data,
+      });
+    };
+    reader.onerror = () => toast.error("Could not read video file");
+    reader.readAsDataURL(file);
+  };
+
   const submit = () => {
     if (!post) return;
     if (!parsed.ok) {
@@ -803,6 +858,7 @@ function EditPostDialog({
       id: post.id,
       url: parsed.url,
       caption: caption.trim() ? caption.trim() : null,
+      previewVideoUrl,
     });
   };
 
@@ -865,6 +921,69 @@ function EditPostDialog({
               className="bg-white"
             />
           </div>
+
+          {parsed.ok && parsed.type === "reel" ? (
+            <div className="space-y-2 rounded-xl border border-[#E7DED4] bg-white p-3">
+              <div>
+                <p className="flex items-center gap-2 text-xs font-bold text-[#352A24]">
+                  <Film className="h-4 w-4 text-[#A83825]" />
+                  Short reel preview
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-[#827568]">
+                  Optional MP4, up to 5 MB. The storefront plays it muted for
+                  2.5 seconds, then opens the original Reel when tapped.
+                </p>
+              </div>
+              <input
+                ref={previewVideoInput}
+                type="file"
+                accept="video/mp4,.mp4"
+                className="sr-only"
+                onChange={event => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) onPreviewVideo(file);
+                }}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={uploadVideo.isPending}
+                  onClick={() => previewVideoInput.current?.click()}
+                  className="h-8 border-[#DCCFC2] bg-white text-xs"
+                >
+                  {uploadVideo.isPending ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  {previewVideoUrl ? "Replace preview" : "Upload preview clip"}
+                </Button>
+                {previewVideoUrl ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setPreviewVideoUrl(null)}
+                    className="h-8 px-2 text-xs text-[#8D5145]"
+                  >
+                    <X className="mr-1 h-3.5 w-3.5" />
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+              {previewVideoUrl ? (
+                <video
+                  src={previewVideoUrl}
+                  controls
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="max-h-48 w-full rounded-lg bg-black object-contain"
+                />
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter>
@@ -873,7 +992,13 @@ function EditPostDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={save.isPending || !parsed.ok || clash || unchanged}
+            disabled={
+              save.isPending ||
+              uploadVideo.isPending ||
+              !parsed.ok ||
+              clash ||
+              unchanged
+            }
             className="bg-[#211B18] text-xs text-white hover:bg-[#3A2D27]"
           >
             {save.isPending ? (
@@ -950,6 +1075,22 @@ function SettingsCard() {
       pauseOnHover: values.pauseOnHover,
     });
   });
+
+  // Never render `SETTINGS_DEFAULTS` as though it were the live configuration.
+  // Without this guard the form showed a plausible-looking profile handle and
+  // heading for as long as the request took, and an owner could save the
+  // defaults over their real values without noticing.
+  if (settings.isLoading) {
+    return (
+      <section className="rounded-[14px] border border-[#D6CABD] bg-[#FCFAF6] p-5">
+        <div className="space-y-3">
+          <div className="h-4 w-40 animate-pulse rounded bg-[#EDE6DC]" />
+          <div className="h-9 w-full animate-pulse rounded bg-[#EDE6DC]" />
+          <div className="h-9 w-full animate-pulse rounded bg-[#EDE6DC]" />
+        </div>
+      </section>
+    );
+  }
 
   if (settings.isError) {
     return (
