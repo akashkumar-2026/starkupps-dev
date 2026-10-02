@@ -13,7 +13,7 @@ import { GallerySection } from "@/features/content/components/GallerySection";
 import { LocationSection } from "@/features/content/components/LocationSection";
 import { TrustSection } from "@/features/content/components/TrustSection";
 import { FaqSection } from "@/features/content/components/FaqSection";
-import { useSiteSettings } from "@/features/content/useSiteContent";
+import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
 import { InstagramSection } from "@/features/instagram/components/InstagramSection";
 import { CategoryImage } from "@/features/menu/category-images";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
@@ -154,6 +154,7 @@ function Home() {
   const [category, setCategory] = useState<string>("coffee");
   const reducedMotion = useReducedMotion();
   const { data: site } = useSiteSettings();
+  const status = useStoreStatus();
 
   const scrollToMenu = (nextCategory?: string) => {
     if (nextCategory) setCategory(nextCategory);
@@ -189,14 +190,38 @@ function Home() {
           />
           <div className="absolute inset-0 bg-espresso/60" />
           <div className="relative mx-auto flex min-h-[86svh] w-full max-w-6xl flex-col justify-end px-4 pb-10 pt-24 text-espresso-foreground">
-            {site?.heroBadge && (
-              <div className="material mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold text-foreground">
-                <span className="relative grid size-2 place-items-center">
-                  <span className="absolute size-2 animate-ping rounded-full bg-veg/70" />
-                  <span className="size-2 rounded-full bg-veg" />
-                </span>
-                {site.heroBadge}
-                {site.openBadge && ` · ${site.openBadge}`}
+            {(site?.heroBadge || status.isOpen !== null) && (
+              <div
+                className={`material mb-6 inline-flex w-fit items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold text-foreground transition-colors ${
+                  status.isOpen ? "border-veg/40 bg-accent/70" : "border-border"
+                }`}
+              >
+                {site?.heroBadge}
+                {site?.heroBadge && status.isOpen !== null && (
+                  <span aria-hidden="true" className="text-border">
+                    ·
+                  </span>
+                )}
+                {status.isOpen !== null && (
+                  <span className="inline-flex items-center gap-2">
+                    {/* Two expanding rings while trading: the blinking dot is the
+                        only signal a visitor can read from the street. */}
+                    <span aria-hidden="true" className="relative grid size-2.5 place-items-center">
+                      {status.isOpen ? (
+                        <>
+                          <span className="absolute size-2.5 animate-ping rounded-full bg-veg/60" />
+                          <span className="absolute size-2 animate-pulse rounded-full bg-veg/80" />
+                          <span className="size-2 rounded-full bg-veg" />
+                        </>
+                      ) : (
+                        <span className="size-2 rounded-full bg-muted-foreground" />
+                      )}
+                    </span>
+                    <span className={status.isOpen ? "text-veg" : "text-muted-foreground"}>
+                      {status.isOpen ? status.detail || "Open now" : "Closed"}
+                    </span>
+                  </span>
+                )}
               </div>
             )}
             {site?.heroHeading && <h1 className="display-xl max-w-3xl">{site.heroHeading}</h1>}
