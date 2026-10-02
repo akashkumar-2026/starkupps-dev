@@ -1,5 +1,6 @@
 import { csrfHeaders } from "@/api/client";
 import type { AuthState, AuthUser, StaffRole } from "@/types";
+import { AUTH_UNAVAILABLE_MSG } from "@shared/const";
 import { roleCan } from "@shared/permissions";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,6 +30,7 @@ const EMPTY = {
   outletDenied: false,
   remember: false,
   expiresAt: null,
+  error: null,
 } as const;
 
 const AuthContext = createContext<AuthContextValue>({
@@ -40,6 +42,14 @@ const AuthContext = createContext<AuthContextValue>({
 });
 
 const AUTH_EVENT = "starkupps:auth-change";
+
+/**
+ * Ceiling on a single `/api/auth/me` round-trip.
+ *
+ * Generous enough for a cold gateway on a slow link, short enough that a hung
+ * socket becomes a visible retry button rather than a permanent skeleton.
+ */
+const SESSION_TIMEOUT_MS = 8000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // main.tsx mounts AuthProvider inside QueryClientProvider, so this is always
@@ -71,11 +81,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchSession = useCallback(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    /**
+     * Every fetch gets its own AbortController and its own deadline.
+     *
+     * The previous version shared one controller across three fetches and cleared
+     * its timer after the first, so the 401-probe and the post-refresh retry ran
+     * with no timeout at all. A single hung request therefore left `loading` true
+     * for ever, and `ProtectedRoute` rendered the dashboard skeleton for the whole
+     * panel with no way out.
+     */
     const attemptFetch = async (): Promise<Response> => {
-      // Retry once on network/503 (infra), not on 401/403
+      // Retry once on network/503 (infra), not on 401/403.
       for (let attempt = 0; attempt < 2; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), SESSION_TIMEOUT_MS);
         try {
           const res = await fetch("/api/auth/me", {
             credentials: "include",
@@ -93,29 +112,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             continue;
           }
           throw e;
+        } finally {
+          clearTimeout(timer);
         }
       }
       throw new Error("unreachable");
     };
     try {
       let res = await attemptFetch();
-      clearTimeout(timeout);
       // The access token has expired but the device still holds a refresh
       // cookie: renew silently rather than bouncing the user to the login page.
       if (res.status === 401) {
         try {
-          const probe = await fetch("/api/auth/me", { credentials: "include" });
+          const probe = await fetch("/api/auth/me", {
+            credentials: "include",
+            signal: AbortSignal.timeout(SESSION_TIMEOUT_MS),
+          });
           const probeData = await probe.json();
           if (probeData?.hasRefresh) {
             if (await rotateSession()) {
               res = await attemptFetch();
             }
           }
-        } catch {}
+        } catch {
+          // A failed probe just means we cannot refresh; fall through to the
+          // signed-out path below rather than hanging.
+        }
       }
       if (res.status === 503) {
-        // Infra unavailable - do NOT log out, keep previous state but stop loading
-        setState(prev => ({ ...prev, loading: false }));
+        // Infra unavailable: keep whatever we knew, stop loading, and say so.
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          error: AUTH_UNAVAILABLE_MSG,
+        }));
         return;
       }
       if (!res.ok) {
@@ -147,18 +177,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         outletDenied: Array.isArray(scope) && scope.length === 0,
         remember: data.remember === true,
         expiresAt: data.expiresAt ?? null,
+        error: null,
       });
     } catch (e) {
-      clearTimeout(timeout);
       if (e instanceof DOMException && e.name === "AbortError") {
-        setState(prev => ({ ...prev, loading: false }));
+        // Timed out. Previously this silently produced "not signed in", which the
+        // shell rendered as "awaiting approval" — a dead end with no retry.
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          error:
+            "Timed out checking your session. Check your connection and retry.",
+        }));
         return;
       }
-      // Network failure - do NOT log out, keep previous auth state
+      // Network failure: do NOT log out, keep previous auth state.
       setState(prev =>
         prev.isAuthenticated
-          ? { ...prev, loading: false }
-          : { ...EMPTY, loading: false }
+          ? {
+              ...prev,
+              loading: false,
+              error:
+                "Could not reach the server. Check your connection and retry.",
+            }
+          : {
+              ...EMPTY,
+              loading: false,
+              error:
+                "Could not reach the server. Check your connection and retry.",
+            }
       );
     }
   }, [rotateSession]);
