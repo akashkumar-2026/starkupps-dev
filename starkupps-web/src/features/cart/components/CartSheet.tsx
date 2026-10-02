@@ -31,21 +31,33 @@ import {
   type CheckoutFormValues,
 } from "@/features/checkout/schema";
 import { createPublicOrder, fetchCharges, validateCoupon } from "@/api/public";
-import { ORDER_TYPE_LABELS, type ChargeQuote, type OrderType } from "@/types/orders";
+import {
+  ORDER_TYPE_LABELS,
+  type ChargeQuote,
+  type OrderType,
+  type SelectedModifier,
+} from "@/types/orders";
 import type { PublicMenuItem } from "@/types/menu";
 
 /** Cross-sell card shown in the cart footer. */
 type UpsellSuggestion = {
   id: number;
   name: string;
+  /** Price actually charged, modifier deltas included. */
   price: number;
-  image: string;
+  /** Uploaded image URL, or null when the owner has not set one. */
+  imageUrl: string | null;
   item: PublicMenuItem;
   variant: PublicMenuItem["variants"][number];
+  /** The default selection this card would add, as ItemSheet would build it. */
+  unitPrice: number;
+  optionLabels: string[];
+  modifiers: SelectedModifier[];
 };
 import { recordOrder } from "@/features/profile/storage";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
-import coffeeImg from "@/assets/cat-coffee.jpg";
+import { CategoryImage } from "@/features/menu/category-images";
+import { useSiteSettings } from "@/features/content/useSiteContent";
 
 const orderTypes: { id: OrderType; label: string }[] = [
   { id: "dine-in", label: ORDER_TYPE_LABELS["dine-in"] },
@@ -68,8 +80,10 @@ export function CartSheet() {
     outlets,
     setSelectedId,
     isLoading: outletLoading,
+    error: outletError,
   } = useOutlet();
   const menuQ = usePublicMenu();
+  const { data: site } = useSiteSettings();
   const { user } = useAuth();
   const { addresses } = useSavedAddresses(user?.id);
   const [authOpen, setAuthOpen] = useState(false);
@@ -81,22 +95,35 @@ export function CartSheet() {
   const [couponValid, setCouponValid] = useState<boolean | null>(null);
   const [couponMsg, setCouponMsg] = useState("");
 
-  // Live charge quote from the gateway (packing/delivery/tax configured in
-  // Store settings). Falls back gracefully when offline — the server always
-  // recomputes authoritatively at order creation.
-  const [quote, setQuote] = useState<ChargeQuote | null>(null);
+  /**
+   * Live charge quote from the gateway (packing/delivery/tax configured in
+   * Store settings).
+   *
+   * `status` is tracked explicitly rather than inferring "no quote" from a null
+   * value. Previously a failed quote request set `quote` to null, which made
+   * total fall back to items-minus-coupon and dropped tax and packing
+   * from the displayed total with no indication anything was missing.
+   */
+  const [quoteState, setQuoteState] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    quote: ChargeQuote | null;
+  }>({ status: "idle", quote: null });
+  const quote = quoteState.quote;
   useEffect(() => {
     let cancelled = false;
-    setQuote(null);
-    if (!outletId || lines.length === 0) return;
+    if (!outletId || lines.length === 0) {
+      setQuoteState({ status: "idle", quote: null });
+      return;
+    }
+    setQuoteState((prev) => ({ status: "loading", quote: prev.quote }));
     const taxable = Math.max(0, subtotal - (couponValid ? couponDiscount : 0));
     const t = setTimeout(() => {
       fetchCharges(outletId, orderTypeToApi(orderType), taxable)
         .then((q) => {
-          if (!cancelled) setQuote(q);
+          if (!cancelled) setQuoteState({ status: "ready", quote: q });
         })
         .catch(() => {
-          if (!cancelled) setQuote(null);
+          if (!cancelled) setQuoteState({ status: "error", quote: null });
         });
     }, 250);
     return () => {
@@ -312,7 +339,7 @@ export function CartSheet() {
           ? `Delivery to ${parsed.address}`
           : parsed.orderType === "dine-in"
             ? `Dine-in at ${outlet?.name ?? "StarKupps"}`
-            : `Takeaway — ready in ~${outlet?.name ? "15" : "9"} min`;
+            : `Takeaway — ${site?.hoursShort || "ready during opening hours"}`;
 
       toast.success(`Order #${order.orderNumber} confirmed, ${parsed.name}!`, {
         description: `${lines.length} item${lines.length === 1 ? "" : "s"} · ${inr(order.total)} · ${summary}`,
@@ -363,35 +390,81 @@ export function CartSheet() {
     if (next !== "delivery") form.clearErrors("address");
   };
 
-  const displayTotal = useMemo(() => {
-    const taxable = Math.max(0, subtotal - (couponValid ? couponDiscount : 0));
-    // Prefer the live gateway quote (configurable charges + taxes); fall back
-    // to items-minus-coupon while it loads or when offline.
-    if (quote) return quote.total;
-    return taxable;
-  }, [subtotal, couponDiscount, couponValid, quote]);
+  const taxable = Math.max(0, subtotal - (couponValid ? couponDiscount : 0));
+
+  /**
+   * What the customer actually pays.
+   *
+   * Only ever the server's quote. When the quote has not arrived we show the
+   * items-minus-coupon figure explicitly labelled as an estimate, and on failure
+   * we say so rather than presenting a subtotal as if it were the total.
+   */
+  const totalView = useMemo(() => {
+    if (quoteState.status === "ready" && quote) {
+      return { amount: quote.total, provisional: false, failed: false };
+    }
+    return {
+      amount: taxable,
+      provisional: true,
+      failed: quoteState.status === "error",
+    };
+  }, [quote, quoteState.status, taxable]);
 
   /**
    * Cross-sell suggestion: the first cold coffee on the live menu, else the
    * first item. Derived from the admin menu — there is no hardcoded upsell.
+   * Items already in the cart are excluded, otherwise the card reads
+   * "Add Classic Cold Coffee" directly beneath the Classic Cold Coffee line.
    */
   const upsellItem = useMemo<UpsellSuggestion | null>(() => {
-    const items = menuQ.data?.items ?? [];
-    if (items.length === 0) return null;
+    const inCart = new Set(lines.map((line) => line.menuItemId));
+    const sellable = (menuQ.data?.items ?? []).filter(
+      (entry) =>
+        !inCart.has(entry.id) &&
+        !entry.comingSoon &&
+        !entry.categoryComingSoon &&
+        !entry.effectiveComingSoon,
+    );
+    if (sellable.length === 0) return null;
 
-    const item = items.find((entry) => /cold.*coffee/i.test(entry.name)) ?? items[0];
-    const variant = item?.variants.find((v) => v.isDefault) ?? item?.variants[0];
+    const item = sellable.find((entry) => /cold.*coffee/i.test(entry.name)) ?? sellable[0];
+    const variant =
+      item?.variants.find((v) => v.isDefault && v.available) ??
+      item?.variants.find((v) => v.available);
     if (!item || !variant) return null;
+
+    // Mirror ItemSheet's default selection: the first option of *every* group,
+    // with the deltas folded into the price. This card used to send only
+    // group 0's first option at the bare variant price, which produced a
+    // different merge key than the item sheet — so tapping "Add" on a product
+    // already in the cart appended a duplicate line instead of bumping its
+    // quantity, and quoted a price that was not what got charged.
+    const modifiers: SelectedModifier[] = [];
+    let unitPrice = variant.effectivePrice;
+    for (const group of item.modifierGroups ?? []) {
+      const option = group.options[0];
+      if (!option) continue;
+      unitPrice += option.priceDelta;
+      modifiers.push({
+        name: option.name,
+        priceDelta: option.priceDelta,
+        groupId: group.id,
+        optionId: option.id,
+      });
+    }
 
     return {
       id: item.id,
       name: item.name,
-      price: variant.effectivePrice,
-      image: item.imageUrl ?? coffeeImg,
+      price: unitPrice,
+      imageUrl: item.imageUrl ?? null,
       item,
       variant,
+      unitPrice,
+      optionLabels: modifiers.map((m) => m.name),
+      modifiers,
     };
-  }, [menuQ.data]);
+  }, [menuQ.data, lines]);
 
   return (
     <>
@@ -399,7 +472,7 @@ export function CartSheet() {
         {open && (
           <motion.aside
             key="cart"
-            className="material fixed inset-x-0 bottom-0 z-50 max-h-[85svh] overflow-hidden rounded-t-3xl border-t border-border shadow-sheet sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[26rem] sm:max-h-none sm:rounded-t-none sm:rounded-l-3xl sm:border-l"
+            className="material fixed inset-x-0 bottom-0 z-cart max-h-[85svh] overflow-hidden rounded-t-3xl border-t border-border shadow-sheet sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[26rem] sm:max-h-none sm:rounded-t-none sm:rounded-l-3xl sm:border-l"
             initial={reduced ? { opacity: 0 } : { y: "100%" }}
             animate={reduced ? { opacity: 1 } : { y: 0 }}
             exit={reduced ? { opacity: 0 } : { y: "100%" }}
@@ -454,9 +527,17 @@ export function CartSheet() {
                     </label>
                     {outletLoading ? (
                       <div className="h-11 animate-pulse rounded-xl bg-muted" />
+                    ) : outletError ? (
+                      // A failed outlet lookup is not the same as "no outlets".
+                      // It used to render "No outlets available. Orders will be
+                      // queued centrally.", which is a plausible-looking state
+                      // that would silently send the order somewhere unexpected.
+                      <p className="text-xs text-destructive">
+                        Couldn&apos;t load outlets. Check your connection and reopen the cart.
+                      </p>
                     ) : outlets.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
-                        No outlets available. Orders will be queued centrally.
+                        No outlets are published yet, so ordering is unavailable.
                       </p>
                     ) : (
                       <select
@@ -503,51 +584,70 @@ export function CartSheet() {
                         key={l.key}
                         layout
                         transition={springs.section}
-                        className="flex gap-3 rounded-2xl border border-border bg-card p-3 shadow-chip"
+                        className="rounded-2xl border border-border bg-card p-3 shadow-chip"
                       >
-                        <img
-                          src={l.image}
-                          alt={l.name}
-                          loading="lazy"
-                          className="size-16 rounded-xl object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">
-                            {l.name}
-                            {l.variantName ? ` · ${l.variantName}` : ""}
-                          </p>
-                          {l.variantQuantity != null && l.variantUnit && (
-                            <p className="text-[11px] text-muted-foreground">
-                              {l.variantQuantity} {l.variantUnit}
+                        {/* The stepper lives on its own row below, so the name
+                            gets the full width instead of being truncated by it. */}
+                        <div className="flex gap-3">
+                          <CategoryImage
+                            url={l.image}
+                            name={l.name}
+                            className="size-16 shrink-0 rounded-xl object-cover"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="line-clamp-2 text-sm font-semibold leading-snug">
+                              {l.name}
                             </p>
-                          )}
-                          {l.optionLabels.length > 0 && (
-                            <p className="truncate text-xs text-muted-foreground">
-                              {l.optionLabels.join(" · ")}
-                            </p>
-                          )}
-                          <p className="mt-1 text-sm font-semibold tabular-nums text-primary">
+                            {/* The variant is a chip, not grey small print. Two
+                                lines of the same product in different sizes read
+                                as identical otherwise, and the cart looks like it
+                                duplicated the item instead of merging it. */}
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {l.variantName && (
+                                <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
+                                  {l.variantName}
+                                </span>
+                              )}
+                              {l.variantQuantity != null && l.variantUnit && (
+                                <span className="text-[11px] tabular-nums text-muted-foreground">
+                                  {l.variantQuantity} {l.variantUnit}
+                                </span>
+                              )}
+                            </div>
+                            {l.optionLabels.length > 0 && (
+                              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                {l.optionLabels.join(" · ")}
+                              </p>
+                            )}
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold tabular-nums text-primary">
                             {inr(l.unitPrice * l.qty)}
                           </p>
                         </div>
-                        <div className="flex items-center gap-1 self-center rounded-full border border-border bg-secondary p-1">
-                          <Pressable
-                            onPointerDown={() => setQty(l.key, l.qty - 1)}
-                            aria-label={`Remove one ${l.name}`}
-                            className="grid size-11 place-items-center rounded-full"
-                          >
-                            <Minus className="size-4" />
-                          </Pressable>
-                          <span className="w-6 text-center text-sm font-semibold tabular-nums">
-                            {l.qty}
-                          </span>
-                          <Pressable
-                            onPointerDown={() => setQty(l.key, l.qty + 1)}
-                            aria-label={`Add one ${l.name}`}
-                            className="grid size-11 place-items-center rounded-full"
-                          >
-                            <Plus className="size-4" />
-                          </Pressable>
+
+                        <div className="mt-2 flex items-center justify-between gap-2 pl-[4.75rem]">
+                          <p className="min-w-0 truncate text-xs tabular-nums text-muted-foreground">
+                            {inr(l.unitPrice)} each
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-secondary p-1">
+                            <Pressable
+                              onPointerDown={() => setQty(l.key, l.qty - 1)}
+                              aria-label={`Remove one ${l.name}`}
+                              className="grid size-11 place-items-center rounded-full"
+                            >
+                              <Minus className="size-4" />
+                            </Pressable>
+                            <span className="w-6 text-center text-sm font-semibold tabular-nums">
+                              {l.qty}
+                            </span>
+                            <Pressable
+                              onPointerDown={() => setQty(l.key, l.qty + 1)}
+                              aria-label={`Add one ${l.name}`}
+                              className="grid size-11 place-items-center rounded-full"
+                            >
+                              <Plus className="size-4" />
+                            </Pressable>
+                          </div>
                         </div>
                       </motion.li>
                     ))}
@@ -597,49 +697,36 @@ export function CartSheet() {
                   )}
 
                   {lines.length > 0 && upsellItem && (
-                    <div className="mt-4 flex items-center justify-between rounded-2xl border border-dashed border-border p-3">
-                      <p className="text-sm">
-                        Add {upsellItem.name} for {inr(upsellItem.price)}
+                    <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-dashed border-border p-3">
+                      <p className="min-w-0 text-sm">
+                        Add <span className="font-semibold">{upsellItem.name}</span> for{" "}
+                        {inr(upsellItem.price)}
                         <span className="block text-xs text-muted-foreground">
                           Goes with everything on the menu.
                         </span>
                       </p>
                       <Pressable
                         onClick={() => {
-                          {
-                            const item = upsellItem.item;
-                            const v = upsellItem.variant;
-                            const firstGroup = item.modifierGroups[0];
-                            const firstOption = firstGroup?.options[0];
-                            addLine({
-                              product: { id: item.id, name: item.name, image: upsellItem.image },
-                              unitPrice: v.effectivePrice,
-                              optionLabels: firstOption ? [firstOption.name] : [],
-                              quantity: 1,
-                              modifiers:
-                                firstGroup && firstOption
-                                  ? [
-                                      {
-                                        name: firstOption.name,
-                                        priceDelta: firstOption.priceDelta,
-                                        groupId: firstGroup.id,
-                                        optionId: firstOption.id,
-                                      },
-                                    ]
-                                  : [],
-                              variant: {
-                                id: v.id,
-                                name: v.name,
-                                quantity: v.quantity,
-                                unit: v.unit,
-                                price: v.effectivePrice,
-                                sku: v.sku,
-                              },
-                            });
-                          }
+                          const { item, variant, imageUrl, unitPrice, optionLabels, modifiers } =
+                            upsellItem;
+                          addLine({
+                            product: { id: item.id, name: item.name, image: imageUrl },
+                            unitPrice,
+                            optionLabels,
+                            quantity: 1,
+                            modifiers,
+                            variant: {
+                              id: variant.id,
+                              name: variant.name,
+                              quantity: variant.quantity,
+                              unit: variant.unit,
+                              price: variant.effectivePrice,
+                              sku: variant.sku,
+                            },
+                          });
                           setOpen(true);
                         }}
-                        className="min-h-11 rounded-full border border-primary px-4 text-sm font-semibold text-primary"
+                        className="min-h-11 shrink-0 rounded-full border border-primary px-4 text-sm font-semibold text-primary"
                       >
                         Add
                       </Pressable>
@@ -689,8 +776,15 @@ export function CartSheet() {
                     </div>
                   )}
                   <div className="mb-3 flex items-center justify-between text-sm font-semibold">
-                    <span>Total</span>
-                    <span className="text-base tabular-nums">{inr(displayTotal)}</span>
+                    <span>
+                      Total
+                      {totalView.provisional && (
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          (estimate)
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-base tabular-nums">{inr(totalView.amount)}</span>
                   </div>
                   {lines.length > 0 && !user && (
                     <button
@@ -1001,15 +1095,34 @@ export function CartSheet() {
                             <span className="text-green-600">
                               Coupon {couponCode.toUpperCase()} · -{inr(couponDiscount)}
                             </span>
-                            <span className="font-semibold tabular-nums">{inr(displayTotal)}</span>
+                            <span className="font-semibold tabular-nums">
+                              {inr(totalView.amount)}
+                            </span>
                           </div>
                         )}
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {orderType === "delivery"
-                            ? `Incl. packing${quote ? ` ${inr(quote.packing)}` : ""} + delivery${quote ? ` ${inr(quote.delivery)}` : " ₹29"}${quote && quote.tax > 0 ? ` + taxes ${inr(quote.tax)}` : ""}`
-                            : orderType === "takeaway"
-                              ? `Incl. packing${quote ? ` ${inr(quote.packing)}` : " ₹15"}${quote && quote.tax > 0 ? ` + taxes ${inr(quote.tax)}` : ""}`
-                              : "No packing charge for dine-in"}
+                          {quoteState.status === "ready" && quote ? (
+                            orderType === "delivery" ? (
+                              <>
+                                Incl. packing {inr(quote.packing)} + delivery {inr(quote.delivery)}
+                                {quote.tax > 0 ? ` + taxes ${inr(quote.tax)}` : ""}
+                              </>
+                            ) : orderType === "takeaway" ? (
+                              <>
+                                Incl. packing {inr(quote.packing)}
+                                {quote.tax > 0 ? ` + taxes ${inr(quote.tax)}` : ""}
+                              </>
+                            ) : (
+                              "No packing charge for dine-in"
+                            )
+                          ) : totalView.failed ? (
+                            <span className="text-destructive">
+                              Delivery and tax charges couldn&apos;t be calculated. We&apos;ll
+                              confirm the final amount before your order is accepted.
+                            </span>
+                          ) : (
+                            "Calculating delivery and taxes…"
+                          )}
                         </p>
                       </div>
                     </div>
@@ -1024,7 +1137,7 @@ export function CartSheet() {
                       <ShoppingBag className="size-5" />
                       {form.formState.isSubmitting
                         ? "Placing order..."
-                        : `Confirm & Pay ${inr(displayTotal)}`}
+                        : `Confirm & Pay ${inr(totalView.amount)}`}
                     </button>
                     <Pressable
                       type="button"
