@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchFaqs, fetchReviews, fetchSiteSettings } from "@/api/public";
 import { subscribeTable } from "@/api/realtime";
 import { queryKeys } from "@/config/query-keys";
+import { evaluateStoreStatus, summarizeWeek } from "@/utils/hours";
 
 /**
  * Storefront business facts (contact, hours, hero, stats, trust, gallery).
@@ -40,10 +42,49 @@ export function useSiteSettings() {
  * row and a refetch of one row is cheaper than reasoning about partial state.
  */
 export function useSiteContentSubscription(queryClient: ReturnType<typeof useQueryClient>) {
-  return subscribeTable("site_settings", undefined, () => {
+  const onChange = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.site });
     void queryClient.invalidateQueries({ queryKey: queryKeys.reviews });
-  });
+  };
+  const siteSettings = subscribeTable("site_settings", undefined, onChange);
+  // Hours are edited in Admin > Outlets > Operating Hours, which writes
+  // `outlet_hours`. Without this an owner who moves the opening time would not
+  // see the storefront badge change.
+  const outletHours = subscribeTable("outlet_hours", undefined, onChange);
+  return () => {
+    siteSettings?.();
+    outletHours?.();
+  };
+}
+
+/** Re-render on an interval so a time-driven badge cannot go stale on screen. */
+const STATUS_TICK_MS = 30_000;
+
+/**
+ * Live open/closed status from the store's own weekly schedule.
+ *
+ * The schedule is the per-day timings from `outlet_hours` (Admin > Outlets >
+ * Operating Hours) evaluated in the outlet's timezone, not the free-text
+ * `hoursSummary` prose — which is why an owner changing the opening time sees it
+ * here immediately. Ticks every 30s so a tab left open across the opening or
+ * closing minute flips without a reload.
+ */
+export function useStoreStatus() {
+  const { data: site } = useSiteSettings();
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), STATUS_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  const status = evaluateStoreStatus(site?.weeklyHours, now, site?.timezone);
+
+  return {
+    ...status,
+    /** One-line week summary, e.g. "Every day · 10 AM – 10 PM". */
+    weekSummary: summarizeWeek(site?.weeklyHours),
+  };
 }
 
 /**
