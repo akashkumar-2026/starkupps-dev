@@ -2593,10 +2593,13 @@ export type Database = {
           heroCtaLabel: string
           heroHeading: string
           heroSubheading: string
+          closedDays: string
+          closeTime: string
           hoursNote: string
           hoursShort: string
           hoursSummary: string
           id: number
+          openTime: string
           latitude: number | null
           longitude: number | null
           mapsQuery: string
@@ -2634,9 +2637,12 @@ export type Database = {
           heroCtaLabel?: string
           heroHeading?: string
           heroSubheading?: string
+          closedDays?: string
+          closeTime?: string
           hoursNote?: string
           hoursShort?: string
           hoursSummary?: string
+          openTime?: string
           id?: number
           latitude?: number | null
           longitude?: number | null
@@ -2675,9 +2681,12 @@ export type Database = {
           heroCtaLabel?: string
           heroHeading?: string
           heroSubheading?: string
+          closedDays?: string
+          closeTime?: string
           hoursNote?: string
           hoursShort?: string
           hoursSummary?: string
+          openTime?: string
           id?: number
           latitude?: number | null
           longitude?: number | null
