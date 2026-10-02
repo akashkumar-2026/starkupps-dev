@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchMenu } from "@/api/public";
 import { subscribeMenu } from "@/api/realtime";
 import { queryKeys } from "@/config/query-keys";
+import { mergeMenuChange } from "@/features/menu/mergeMenuChange";
 import { useOutlet } from "@/state/outlet-provider";
 
 /**
@@ -12,6 +13,12 @@ import { useOutlet } from "@/state/outlet-provider";
  * Loads over HTTP and stays in sync through a Supabase Realtime subscription, so
  * an edit in Admin appears without a reload. Realtime is optional — if it is
  * unavailable the query still refetches on window focus and reconnect.
+ *
+ * Events are merged into the cache where the payload is sufficient, and only
+ * fall back to a refetch when it is not. An "item sold out" toggle or a price
+ * change therefore updates the visible list immediately; adding an item, a
+ * variant or a modifier needs a refetch because the assembled payload spans
+ * eight tables and no single event describes it.
  */
 export function usePublicMenu() {
   const { selectedId } = useOutlet();
@@ -25,8 +32,11 @@ export function usePublicMenu() {
   });
 
   useEffect(() => {
-    const unsubscribe = subscribeMenu(selectedId, () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.menu(selectedId) });
+    const unsubscribe = subscribeMenu(selectedId, (change) => {
+      const queryKey = queryKeys.menu(selectedId);
+      if (!mergeMenuChange(queryClient, queryKey, change)) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
     });
     return () => unsubscribe?.();
   }, [selectedId, queryClient]);
