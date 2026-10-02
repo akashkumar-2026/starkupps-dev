@@ -23,4 +23,10 @@ export type AuthState = {
   remember: boolean;
   /** Access-token expiry as epoch milliseconds. */
   expiresAt: number | null;
+  /**
+   * Set when the session check itself failed (network down, gateway 503, or it
+   * timed out). Distinct from "signed out", so the shell can offer a retry
+   * instead of showing the misleading "awaiting approval" dead end.
+   */
+  error: string | null;
 };
