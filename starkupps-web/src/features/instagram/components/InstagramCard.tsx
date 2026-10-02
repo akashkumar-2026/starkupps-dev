@@ -1,6 +1,5 @@
-import { Instagram, Play, Square } from "lucide-react";
+import { ArrowUpRight, Instagram, Play, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { instagramEmbedUrl } from "@/features/instagram/helpers";
 import { cn } from "@/utils/cn";
 import type { InstagramPostType, PublicInstagramPost } from "@/types/instagram";
 
@@ -49,41 +48,33 @@ export function InstagramTypeBadge({
   );
 }
 
-/** Neutral stand-in shown until the embed mounts (or if it never does). */
-function Placeholder({ post }: { post: PublicInstagramPost }) {
+function ArtworkFallback({ post }: { post: PublicInstagramPost }) {
+  const caption = post.caption?.trim();
   return (
-    <div className="absolute inset-0 grid place-items-center gap-2 bg-muted text-muted-foreground">
-      <InstagramGlyph className="size-8" />
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">
-        {post.type === "reel" ? "Reel" : "Post"}
-      </span>
-    </div>
-  );
-}
-
-/**
- * Shown when Instagram refuses to render an embed (private account, deleted
- * post, placeholder shortcode from the seed, or an embed blocked by the
- * network). A card is never left blank or broken.
- */
-function Fallback({ post, reason }: { post: PublicInstagramPost; reason: string }) {
-  return (
-    <div className="absolute inset-0 flex flex-col justify-between bg-card p-4 text-left">
-      <span className="grid size-9 place-items-center rounded-full bg-accent text-primary">
-        <Instagram className="size-4" />
-      </span>
-      <span>
-        <span className="eyebrow block text-primary">{post.type === "reel" ? "Reel" : "Post"}</span>
-        <span className="mt-1 block text-sm font-semibold">{reason}</span>
-      </span>
+    <div className="absolute inset-0 overflow-hidden bg-[#efe5d8]">
+      <span className="absolute -right-12 -top-10 size-48 rounded-full bg-[#d75a32]/15" />
+      <span className="absolute -bottom-16 -left-10 size-52 rounded-full bg-[#6f4330]/10" />
+      <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(ellipse_at_50%_42%,rgba(255,255,255,0.8),transparent_58%)]">
+        <div className="grid size-16 place-items-center rounded-2xl border border-white/80 bg-white/75 text-primary shadow-[0_12px_32px_rgba(67,42,26,0.12)] backdrop-blur-sm">
+          <Instagram className="size-7" strokeWidth={1.5} />
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#211914]/90 via-[#211914]/45 to-transparent px-5 pb-5 pt-24 text-white">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
+          From the StarKupps feed
+        </p>
+        {caption ? (
+          <p className="mt-2 line-clamp-3 text-sm font-medium leading-5">{caption}</p>
+        ) : (
+          <p className="mt-2 text-sm font-medium">A little taste of the good stuff.</p>
+        )}
+      </div>
     </div>
   );
 }
 
 export type InstagramCardProps = {
   post: PublicInstagramPost;
-  /** Section is close enough to the viewport to start mounting embeds. */
-  embedsAllowed: boolean;
   /**
    * Second copy of the feed, rendered purely for the seamless loop. It is
    * hidden from assistive tech and removed from the tab order so the same post
@@ -94,151 +85,117 @@ export type InstagramCardProps = {
 };
 
 /**
- * One feed card.
- *
- * Deliberately isolated: this component owns *what a card looks like* and
- * nothing else. The marquee that wraps it only knows about track geometry, so
- * when a future Instagram Graph API sync fills `thumbnailUrl`, the swap to
- * native `<img>` cards happens here alone.
+ * One feed card. The public feed supplies a resolved Instagram cover image when
+ * available; using a local image tile avoids fragile third-party iframe embeds.
  */
-export function InstagramCard({
-  post,
-  embedsAllowed,
-  duplicate = false,
-  onOpen,
-}: InstagramCardProps) {
-  // Per-card gate: only mount an embed once this card is near the viewport.
-  // Without this, a 10-post feed rendered twice would create 20 iframes.
-  const [nearViewport, setNearViewport] = useState(false);
-  const [blocked, setBlocked] = useState(false);
-  const rootRef = useRef<HTMLLIElement | null>(null);
-
-  // Watchdog rather than `onLoad`: Instagram answers with 200 + its own error
-  // page for unavailable posts, so `onLoad` proves nothing. If no paint lands
-  // within the window we fall back instead of showing an empty frame.
-  useEffect(() => {
-    if (!embedsAllowed || !nearViewport || blocked || post.thumbnailUrl) return;
-    const timer = setTimeout(() => setBlocked(true), 9000);
-    return () => clearTimeout(timer);
-  }, [embedsAllowed, nearViewport, blocked, post.thumbnailUrl]);
+export function InstagramCard({ post, duplicate = false, onOpen }: InstagramCardProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const [previewActive, setPreviewActive] = useState(false);
+  const [previewFinished, setPreviewFinished] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const cardRef = useRef<HTMLLIElement | null>(null);
+  const isReel = post.type === "reel";
+  const hasImage = Boolean(post.thumbnailUrl && !imageFailed);
+  const showPreview = Boolean(
+    isReel &&
+    post.previewVideoUrl &&
+    previewActive &&
+    !previewFinished &&
+    !previewFailed &&
+    !duplicate,
+  );
 
   useEffect(() => {
-    const el = rootRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    // Hysteresis: mount early (260px), unmount only once well clear. Prevents
-    // the flicker of mount/unmount every time a card crosses the boundary.
-    let clearTimer: ReturnType<typeof setTimeout> | null = null;
+    if (!isReel || !post.previewVideoUrl || duplicate) return;
+    const element = cardRef.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setPreviewActive(true);
+      return;
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            if (clearTimer) {
-              clearTimeout(clearTimer);
-              clearTimer = null;
-            }
-            setNearViewport(true);
-          } else if (!clearTimer) {
-            clearTimer = setTimeout(() => setNearViewport(false), 1500);
-          }
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setPreviewActive(true);
+          observer.disconnect();
         }
       },
-      { rootMargin: "260px 0px" },
+      { rootMargin: "48px", threshold: 0.25 },
     );
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      if (clearTimer) clearTimeout(clearTimer);
-    };
-  }, []);
-
-  const mountEmbed = embedsAllowed && nearViewport && !blocked && !post.thumbnailUrl;
-  const isReel = post.type === "reel";
-  const isBlank = !post.thumbnailUrl && !mountEmbed;
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [duplicate, isReel, post.previewVideoUrl]);
 
   return (
     <li
-      ref={rootRef}
+      ref={cardRef}
       aria-hidden={duplicate ? true : undefined}
+      data-duplicate={duplicate ? "true" : undefined}
       className="group/ig relative shrink-0 snap-start"
       style={{ width: "var(--ig-card-w)" }}
     >
-      <div
-        className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-card"
-        style={{ height: "var(--ig-card-h)" }}
-      >
-        {post.thumbnailUrl ? (
+      <div className="relative aspect-[4/5] overflow-hidden rounded-[1.4rem] border border-border bg-card shadow-card transition duration-300 group-hover/ig:-translate-y-1 group-hover/ig:shadow-[0_20px_48px_rgba(44,31,22,0.18)]">
+        {hasImage ? (
           <img
-            src={post.thumbnailUrl}
+            src={post.thumbnailUrl ?? undefined}
             alt={post.caption ?? `Instagram ${post.type} from StarKupps`}
             loading="lazy"
             decoding="async"
+            onError={() => setImageFailed(true)}
             className="absolute inset-0 size-full object-cover"
           />
-        ) : mountEmbed ? (
-          <iframe
-            title={
-              post.caption
-                ? `Instagram ${post.type}: ${post.caption}`
-                : `Instagram ${post.type} from StarKupps`
-            }
-            src={instagramEmbedUrl(post.shortcode, post.type)}
-            loading="lazy"
-            tabIndex={duplicate ? -1 : 0}
-            referrerPolicy="strict-origin-when-cross-origin"
-            className="absolute left-0 w-full border-0"
-            style={{
-              top: "calc(-1 * var(--ig-embed-lift))",
-              height: "calc(100% + var(--ig-embed-lift) + var(--ig-embed-tail))",
-            }}
-          />
-        ) : blocked ? (
-          <Fallback post={post} reason="Preview unavailable — open it on Instagram" />
         ) : (
-          <Placeholder post={post} />
+          <ArtworkFallback post={post} />
         )}
+        {showPreview ? (
+          <video
+            src={post.previewVideoUrl ?? undefined}
+            poster={post.thumbnailUrl ?? undefined}
+            muted
+            playsInline
+            autoPlay
+            preload="metadata"
+            aria-hidden="true"
+            onTimeUpdate={(event) => {
+              if (event.currentTarget.currentTime >= 2.5) {
+                event.currentTarget.pause();
+                setPreviewFinished(true);
+              }
+            }}
+            onEnded={() => setPreviewFinished(true)}
+            onError={() => setPreviewFailed(true)}
+            className="absolute inset-0 z-[1] size-full object-cover"
+          />
+        ) : null}
 
-        {/* Overlay above the iframe: iframes swallow pointer events, so this is
-            what actually receives hover (to pause the marquee) and the click. */}
         <button
           type="button"
           onClick={() => onOpen(post.url)}
           tabIndex={duplicate ? -1 : 0}
-          aria-label={`View this ${isReel ? "reel" : "post"} on Instagram`}
+          aria-label={`View this ${isReel ? "reel" : "post"}${
+            post.caption ? `: ${post.caption}` : ""
+          } on Instagram`}
           className="absolute inset-0 z-10 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary"
         >
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-espresso/0 transition-colors duration-300 group-hover/ig:bg-espresso/25 group-focus-within/ig:bg-espresso/25">
-            <span className="material flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold text-foreground opacity-0 shadow-chip transition-opacity duration-200 group-hover/ig:opacity-100 group-focus-within/ig:opacity-100">
-              {isReel ? (
-                <Play className="size-3.5 fill-primary text-primary" />
-              ) : (
-                <InstagramGlyph className="size-3.5 text-primary" />
-              )}
-              Watch on Instagram
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-espresso/0 transition-colors duration-300 group-hover/ig:bg-espresso/15 group-focus-visible/ig:bg-espresso/15">
+            <span className="grid size-12 translate-y-2 place-items-center rounded-full bg-white/95 text-foreground opacity-0 shadow-lg transition duration-200 group-hover/ig:translate-y-0 group-hover/ig:opacity-100 group-focus-visible/ig:translate-y-0 group-focus-visible/ig:opacity-100">
+              <ArrowUpRight className="size-5" />
             </span>
           </span>
         </button>
 
-        {isBlank ? null : (
-          <InstagramTypeBadge
-            type={post.type}
-            className="pointer-events-none absolute bottom-3 left-3 z-20 shadow-chip"
-          />
-        )}
-
-        {/* Instagram's embed scrolls internally when its own layout is taller
-            than our box. The scrollbar lives in a cross-origin document so it
-            cannot be hidden with CSS; this strip in the card's own background
-            sits above it. */}
-        {mountEmbed ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 z-20 w-2.5 bg-card"
-          />
-        ) : null}
+        <span className="pointer-events-none absolute left-3 top-3 z-20 grid size-9 place-items-center rounded-full border border-white/60 bg-white/90 text-primary shadow-sm backdrop-blur">
+          <InstagramGlyph className="size-4" />
+        </span>
+        <InstagramTypeBadge
+          type={post.type}
+          className="pointer-events-none absolute right-3 top-3 z-20 border-white/60 bg-white/90 shadow-sm backdrop-blur"
+        />
 
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-border/60"
+          className="pointer-events-none absolute inset-0 rounded-[1.4rem] ring-1 ring-inset ring-black/5"
         />
       </div>
     </li>
