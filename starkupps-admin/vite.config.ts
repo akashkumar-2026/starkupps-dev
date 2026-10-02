@@ -3,8 +3,6 @@ import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
-import { mockApiPlugin } from "./dev/mock-api";
-
 const srcDir = fileURLToPath(new URL("./src", import.meta.url));
 const sharedDir = fileURLToPath(new URL("./shared", import.meta.url));
 
@@ -22,7 +20,7 @@ export default defineConfig(({ mode }) => {
     publicDir: fileURLToPath(new URL("./public", import.meta.url)),
     envDir: fileURLToPath(new URL(".", import.meta.url)),
 
-    plugins: [react(), tailwindcss(), mockApiPlugin()],
+    plugins: [react(), tailwindcss()],
 
     resolve: {
       alias: {
@@ -39,9 +37,8 @@ export default defineConfig(({ mode }) => {
 
     server: {
       host: true,
-      // Vite auto-increments if the port is taken; force it in CI.
-      port: Number(process.env["VITE_PORT"] ?? 5173),
-      strictPort: Boolean(process.env["VITE_PORT"]),
+      port: Number(process.env["VITE_PORT"] ?? 5175),
+      strictPort: true,
       // Same-origin /api in dev keeps the session cookie first-party.
       proxy: {
         "/api": { target: apiTarget, changeOrigin: true },
