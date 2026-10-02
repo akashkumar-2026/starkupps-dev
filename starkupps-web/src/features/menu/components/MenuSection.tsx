@@ -302,9 +302,14 @@ export function MenuSection({
                       )}
                     />
                     {isComingSoon && (
-                      <div className="absolute inset-0 grid place-items-center bg-background/45 backdrop-blur-[1px]">
-                        <span className="rounded-full bg-foreground px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-background shadow">
-                          Coming Soon
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 z-10 grid place-items-center rounded-2xl bg-foreground/55 px-2 text-center text-background backdrop-blur-sm"
+                      >
+                        <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.12em]">
+                          Coming
+                          <br />
+                          Soon
                         </span>
                       </div>
                     )}
