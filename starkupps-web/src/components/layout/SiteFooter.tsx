@@ -1,5 +1,5 @@
 import { phoneDisplay } from "@/config/site";
-import { useSiteSettings } from "@/features/content/useSiteContent";
+import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
 
 /**
  * Site footer.
@@ -7,14 +7,18 @@ import { useSiteSettings } from "@/features/content/useSiteContent";
  * Contact details come from `public.site_settings`. When a field is unconfigured
  * the corresponding fragment is omitted rather than replaced with a placeholder
  * value, so the footer never displays a fact the cafe has not entered.
+ *
+ * Hours come from the live weekly schedule, so changing the opening time in
+ * Admin > Outlets > Operating Hours changes the footer too.
  */
 export function SiteFooter() {
   const { data: site } = useSiteSettings();
+  const status = useStoreStatus();
 
   const phone = site ? phoneDisplay(site.phoneDigits) : "";
   const facts = [
     site?.address,
-    site?.hoursShort,
+    status.weekSummary || site?.hoursShort,
     site?.fssaiLicense ? `FSSAI ${site.fssaiLicense}` : null,
   ].filter((value): value is string => Boolean(value));
 
