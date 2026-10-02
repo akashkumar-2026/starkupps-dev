@@ -61,3 +61,11 @@ export type PublicReview = {
   rating: number;
   createdAt: string;
 };
+
+/** An active, customer-facing FAQ from Admin > Content > FAQs. */
+export type PublicFaq = {
+  id: number;
+  question: string;
+  answer: string;
+  position: number;
+};
