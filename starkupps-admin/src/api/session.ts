@@ -16,6 +16,11 @@ export type SessionSnapshot = {
 let lastCheckAt = 0;
 let checkInFlight: Promise<boolean> | null = null;
 
+/** Bound the verification probe: an unbounded fetch pinned `checkInFlight` for
+ *  ever, which made the 2 s debounce below short-circuit to a promise that could
+ *  never settle. */
+const PROBE_TIMEOUT_MS = 8000;
+
 /** Verifies a tRPC auth error before bouncing the user to the login page. */
 export async function isReallyUnauthenticated(): Promise<boolean> {
   const now = Date.now();
@@ -25,21 +30,28 @@ export async function isReallyUnauthenticated(): Promise<boolean> {
 
   const pending = (async () => {
     try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const res = await fetch("/api/auth/me", {
+        credentials: "include",
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
       // 503 means the database is unreachable, not that the session ended.
       if (!res.ok) return res.status !== 503;
       const data = (await res.json()) as { user?: unknown };
       return !data?.user;
     } catch {
-      // Network failure must never log the user out.
+      // Network failure or timeout must never log the user out.
       return false;
     }
   })();
 
   checkInFlight = pending;
-  const result = await pending;
-  checkInFlight = null;
-  return result;
+  try {
+    return await pending;
+  } finally {
+    // Always cleared, even on rejection, so a transient failure cannot wedge the
+    // debounce for the rest of the session.
+    checkInFlight = null;
+  }
 }
 
 let lastRedirectAt = 0;
