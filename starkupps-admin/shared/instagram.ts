@@ -24,6 +24,7 @@ export type InstagramPost = {
   type: InstagramPostType;
   caption: string | null;
   thumbnailUrl: string | null;
+  previewVideoUrl: string | null;
   sortOrder: number;
   isActive: boolean;
   createdAt: string;
