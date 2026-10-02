@@ -25,6 +25,22 @@ const t = initTRPC.context<TrpcContext>().create({
       >;
       sanitized.data = rest as typeof sanitized.data;
     }
+    // Publish the caller's domain code alongside the generic tRPC code.
+    //
+    // `TRPCError.cause` is not serialised by default, so `throw new TRPCError({
+    // cause: { domainCode } })` would be invisible to starkupps-web. Promote it
+    // explicitly: clients classify on this instead of regex-matching English
+    // prose, which is what made "Delivery not available at this outlet." get
+    // reported to customers as "Some items are unavailable at this outlet.".
+    const domainCode = (error.cause as { domainCode?: unknown } | undefined)
+      ?.domainCode;
+    if (typeof domainCode === "string" && sanitized.data) {
+      // `DefaultErrorData` has no index signature, so extending it needs a cast.
+      sanitized.data = {
+        ...sanitized.data,
+        domainCode,
+      } as typeof sanitized.data;
+    }
     if (error.code === "INTERNAL_SERVER_ERROR" && !exposed) {
       return {
         ...sanitized,

@@ -5,11 +5,23 @@ import {
   escapePostgrestOr,
   getOutletScope,
   hasPermission,
+  invalidateAuthMemo,
   recordAudit,
   resolveStaffRole,
 } from "../db/index";
 import { protectedProcedure, router } from "../lib/trpc";
 import { getSupabaseAdmin, getSql } from "../db/supabase";
+import { parseOutletServices } from "@shared/outletServices";
+import {
+  buildOutletDeleteImpact,
+  OPEN_DELIVERY_STATUSES,
+  OPEN_ORDER_STATUSES,
+  OUTLET_AUDIT_TABLES,
+  OUTLET_DETACH_TABLES,
+  OUTLET_PRIMARY_OWNER_TABLE,
+  OUTLET_PURGE_TABLES,
+} from "./outletDeletion";
+import type { OutletDeleteTxResult } from "./outletDeletion";
 
 async function requirePerm(user: any, perm: any) {
   const role = await resolveStaffRole(user);
@@ -19,6 +31,66 @@ async function requirePerm(user: any, perm: any) {
       message: "Your staff role does not have access to this operation.",
     });
   return role;
+}
+
+type SqlRunner = { unsafe: (q: string, p?: unknown[]) => Promise<any[]> };
+
+/**
+ * Counts every row a delete would touch, plus the two blocker counts.
+ *
+ * One `LATERAL` statement instead of ~28 round trips: the delete path already
+ * takes a row lock and a transaction, and a per-table count loop there would
+ * hold it open for the whole walk.
+ *
+ * Returns `__`-prefixed keys for the blocker counts so they cannot collide with
+ * a table name, and so `buildOutletDeleteImpact` never has to guess.
+ */
+async function countOutletDependentsIn(
+  tx: SqlRunner,
+  outletId: number
+): Promise<Record<string, number>> {
+  const tables = [
+    ...OUTLET_PURGE_TABLES,
+    ...OUTLET_DETACH_TABLES,
+    OUTLET_PRIMARY_OWNER_TABLE,
+  ];
+  const [row] = await tx.unsafe(
+    `
+    SELECT
+      (SELECT count(*)::int FROM orders
+        WHERE "outletId" = $1 AND status = ANY($2::text[]))            AS "__openOrders",
+      (SELECT count(*)::int FROM deliveries
+        WHERE "outletId" = $1 AND status = ANY($3::text[]))            AS "__openDeliveries",
+      ${tables
+        .map(
+          (t, i) => `(SELECT count(*)::int FROM ${t}
+             WHERE ${
+               t === OUTLET_PRIMARY_OWNER_TABLE
+                 ? '"primaryOutletId"'
+                 : '"outletId"'
+             } = $1) AS "t${i}"`
+        )
+        .join(",\n      ")}
+    `,
+    [outletId, [...OPEN_ORDER_STATUSES], [...OPEN_DELIVERY_STATUSES]]
+  );
+  const counts: Record<string, number> = {
+    __openOrders: Number(row?.__openOrders ?? 0),
+    __openDeliveries: Number(row?.__openDeliveries ?? 0),
+  };
+  tables.forEach((table, i) => {
+    counts[table] = Number(row?.[`t${i}`] ?? 0);
+  });
+  return counts;
+}
+
+/** Pool-backed wrapper so the preflight can reuse the exact same counts the
+ *  mutation re-verifies inside its transaction. */
+async function countOutletDependents(
+  outletId: number
+): Promise<Record<string, number>> {
+  const sql = await getSql();
+  return countOutletDependentsIn(sql, outletId);
 }
 
 export const outletsRouter = router({
@@ -127,6 +199,9 @@ export const outletsRouter = router({
         };
         return {
           ...o,
+          // `services` is a `json` column and arrives unparsed; normalise it so
+          // callers never have to know that.
+          services: parseOutletServices(o.services),
           deliveryRadiusKm: Number(o.deliveryRadiusKm ?? 0),
           minimumOrder: Number(o.minimumOrder ?? 0),
           ...s,
@@ -291,6 +366,8 @@ export const outletsRouter = router({
       return {
         outlet: {
           ...(outlet as any),
+          // Normalised: `services` is a `json` column and arrives as a string.
+          services: parseOutletServices((outlet as any).services),
           deliveryRadiusKm: Number((outlet as any).deliveryRadiusKm ?? 0),
           minimumOrder: Number((outlet as any).minimumOrder ?? 0),
         },
@@ -548,7 +625,12 @@ export const outletsRouter = router({
               payload.minimumOrder,
               payload.preparationTimeMinutes,
               payload.status,
-              JSON.stringify(payload.services),
+              // Bind the object, not `JSON.stringify(...)`: postgres.js already
+              // encodes values for a `json` column, so stringifying here stored
+              // the flags as a JSON *string* and every reader's
+              // `services.delivery` became undefined — which rejected every
+              // order type at checkout. See shared/outletServices.ts.
+              payload.services,
               payload.ownerId,
             ]
           );
@@ -855,6 +937,214 @@ export const outletsRouter = router({
         after: { status: input.status },
       });
       return { success: true };
+    }),
+
+  /**
+   * Preflight for `outlets.delete`.
+   *
+   * Read-only and side-effect free: it reports exactly what a delete would
+   * destroy, detach and block on, so the operator confirms against real counts
+   * instead of a generic warning. Gated on `outlets.read` rather than
+   * `outlets.delete` because a manager allowed to read an outlet should be
+   * able to see why it cannot be deleted — the counts are aggregate only and
+   * every row is behind `assertOutletAccess`.
+   */
+  deleteImpact: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      await requirePerm(ctx.user, "outlets.read");
+      await assertOutletAccess(ctx.user, input.id);
+      const counts = await countOutletDependents(input.id);
+      return buildOutletDeleteImpact({
+        counts,
+        openOrders: Number(counts.__openOrders ?? 0),
+        openDeliveries: Number(counts.__openDeliveries ?? 0),
+      });
+    }),
+
+  /**
+   * Hard-deletes an outlet and everything scoped to it.
+   *
+   * Guarded in four independent ways, because a misfire here is unrecoverable:
+   *   1. `outlets.delete` — owner-only, mirroring `menu.delete`/`coupons.delete`.
+   *   2. `assertOutletAccess` — a scoped manager can never reach another tenant.
+   *   3. `confirmCode` must equal the outlet code — server-side, so a forged or
+   *      stale request still has to name its target.
+   *   4. Blockers are recomputed **inside** the transaction, never trusted from
+   *      the client, so an order placed between the dialog and the click still
+   *      stops the delete.
+   *
+   * The whole thing runs in one `BEGIN … COMMIT`. The dependent tables are
+   * purged leaf-first, financial history is detached rather than destroyed, and
+   * the `SELECT … FOR UPDATE` on the outlet row serialises concurrent deletes so
+   * a double-click cannot double-purge.
+   */
+  delete: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        confirmCode: z
+          .string()
+          .trim()
+          .min(2)
+          .max(32)
+          .regex(/^[A-Za-z0-9-]+$/, "Confirmation must be the outlet code."),
+        reason: z.string().trim().max(240).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await requirePerm(ctx.user, "outlets.delete");
+      await assertOutletAccess(ctx.user, input.id);
+
+      let sql: Awaited<ReturnType<typeof getSql>>;
+      try {
+        sql = await getSql();
+      } catch {
+        // Direct SQL is what makes this atomic. Falling back to a sequence of
+        // PostgREST deletes would leave a half-deleted outlet on any failure,
+        // so refuse instead of risking it.
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Deleting an outlet needs a direct database connection, which is unavailable. Deactivate the outlet instead.",
+        });
+      }
+
+      const detail: OutletDeleteTxResult | null = await sql.begin(
+        async (tx: any): Promise<OutletDeleteTxResult | null> => {
+          // Row lock: serialises concurrent deletes. A second request blocks,
+          // then reads zero rows and 404s instead of purging twice.
+          const [outlet] = await tx.unsafe(
+            `SELECT * FROM outlets WHERE id = $1 FOR UPDATE`,
+            [input.id]
+          );
+          if (!outlet) return null;
+
+          const counts = await countOutletDependentsIn(tx, input.id);
+          const impact = buildOutletDeleteImpact({
+            counts,
+            openOrders: Number(counts.__openOrders ?? 0),
+            openDeliveries: Number(counts.__openDeliveries ?? 0),
+          });
+          if (!impact.deletable) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: impact.blockers.join(" "),
+            });
+          }
+          if (
+            input.confirmCode.toUpperCase() !==
+            String(outlet.code).toUpperCase()
+          ) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Confirmation does not match outlet code ${outlet.code}.`,
+            });
+          }
+
+          // Staff keep their record; only the outlet link is cleared. Read first
+          // so the authorization memos can be invalidated below.
+          const staffRows: Array<{ id: number; userId: number | null }> =
+            await tx.unsafe(
+              `SELECT id, "userId" FROM staff WHERE "primaryOutletId" = $1`,
+              [input.id]
+            );
+          const memberRows: Array<{ userId: number | null }> = await tx.unsafe(
+            `SELECT s."userId" AS "userId"
+             FROM outlet_staff os
+             JOIN staff s ON s.id = os."staffId"
+            WHERE os."outletId" = $1`,
+            [input.id]
+          );
+
+          const purged: Record<string, number> = {};
+          for (const table of OUTLET_PURGE_TABLES) {
+            const rows = await tx.unsafe(
+              `DELETE FROM ${table} WHERE "outletId" = $1 RETURNING 1`,
+              [input.id]
+            );
+            purged[table] = rows.length;
+          }
+
+          const detached: Record<string, number> = {};
+          for (const table of OUTLET_DETACH_TABLES) {
+            const rows = await tx.unsafe(
+              `UPDATE ${table} SET "outletId" = NULL WHERE "outletId" = $1 RETURNING 1`,
+              [input.id]
+            );
+            detached[table] = rows.length;
+          }
+          // The audit trail is evidence, not outlet data: keep the rows, drop only
+          // the now-dangling outlet reference.
+          for (const table of OUTLET_AUDIT_TABLES) {
+            await tx.unsafe(
+              `UPDATE ${table} SET "outletId" = NULL WHERE "outletId" = $1`,
+              [input.id]
+            );
+          }
+          await tx.unsafe(
+            `UPDATE ${OUTLET_PRIMARY_OWNER_TABLE}
+              SET "primaryOutletId" = NULL
+            WHERE "primaryOutletId" = $1`,
+            [input.id]
+          );
+
+          await tx.unsafe(`DELETE FROM outlets WHERE id = $1`, [input.id]);
+
+          return {
+            outlet,
+            purged,
+            detached,
+            impact,
+            affectedUsers: Array.from(
+              new Set(
+                [...staffRows, ...memberRows]
+                  .map(r => r.userId)
+                  .filter((id): id is number => typeof id === "number")
+              )
+            ),
+          };
+        }
+      );
+
+      if (!detail) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Outlet not found. It may have already been deleted.",
+        });
+      }
+
+      // Scope memos are cached for 30s. A manager who lost their outlet would
+      // keep passing `assertOutletAccess` until it expired, so clear now.
+      for (const userId of detail.affectedUsers)
+        invalidateAuthMemo({ id: userId });
+
+      try {
+        await recordAudit({
+          actorUserId: ctx.user.id,
+          entityType: "outlet",
+          entityId: input.id,
+          outletId: null,
+          action: "deleted",
+          before: detail.outlet as any,
+          after: {
+            reason: input.reason ?? null,
+            confirmedWith: input.confirmCode,
+            purged: detail.purged,
+            detached: detail.detached,
+          },
+          success: true,
+        });
+      } catch {}
+
+      return {
+        success: true as const,
+        id: input.id,
+        code: String(detail.outlet.code),
+        purged: detail.impact.purged,
+        detached: detail.impact.detached,
+        totalPurged: detail.impact.totalPurged,
+      };
     }),
 
   hours: router({

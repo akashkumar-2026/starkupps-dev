@@ -13,6 +13,8 @@ import { escapePostgrestOr, normalizeSelectedModifiers } from "../db/index";
 import { publicProcedure, router } from "../lib/trpc";
 import { resolveInstagramThumbnail } from "../lib/instagram-thumbnails";
 import { getSql, getSupabaseAdmin } from "../db/supabase";
+import { parseOutletServices } from "@shared/outletServices";
+import { OrderDomainCode } from "@shared/orderErrorCodes";
 import {
   INSTAGRAM_LIMITS,
   marqueeDurationSeconds,
@@ -118,15 +120,13 @@ export async function resolveChargeConfig(
         freeDeliveryAbove = toNum(settings.freeDeliveryAbove);
     }
   } catch {}
-  const services = (outlet as any)?.services as any;
+  const services = parseOutletServices((outlet as any)?.services);
   if (
-    services &&
     Number.isFinite(Number(services.packingCharge)) &&
     Number(services.packingCharge) >= 0
   )
     packingCharge = Number(services.packingCharge);
   if (
-    services &&
     Number.isFinite(Number(services.deliveryFee)) &&
     Number(services.deliveryFee) >= 0
   )
@@ -431,6 +431,9 @@ export const publicRouter = router({
         const rows = (data ?? []) as any[];
         return rows.map(r => ({
           ...r,
+          // Normalised so the storefront's `PublicOutlet["services"]` is honest;
+          // the raw `json` column arrives as a string. See shared/outletServices.
+          services: parseOutletServices(r.services),
           deliveryRadiusKm: toNum(r.deliveryRadiusKm),
           minimumOrder: toNum(r.minimumOrder),
         }));
@@ -473,6 +476,8 @@ export const publicRouter = router({
         return {
           outlet: {
             ...(row as any),
+            // Normalised — see the note in `outlets.list`.
+            services: parseOutletServices((row as any).services),
             deliveryRadiusKm: toNum((row as any).deliveryRadiusKm),
             minimumOrder: toNum((row as any).minimumOrder),
           },
@@ -1364,33 +1369,39 @@ export const publicRouter = router({
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Selected outlet not found.",
+            cause: { domainCode: OrderDomainCode.OUTLET_NOT_FOUND },
           });
         const outlet = outletRow as any;
         if (outlet.status !== "active")
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Selected outlet is not accepting orders right now.",
+            cause: { domainCode: OrderDomainCode.OUTLET_UNAVAILABLE },
           });
-        const services = outlet.services as any;
-        if (input.type === "delivery" && services && !services.delivery)
+        const services = parseOutletServices(outlet.services);
+        if (input.type === "delivery" && !services.delivery)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Delivery not available at this outlet.",
+            cause: { domainCode: OrderDomainCode.ORDER_TYPE_UNAVAILABLE },
           });
-        if (input.type === "takeaway" && services && !services.takeaway)
+        if (input.type === "takeaway" && !services.takeaway)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Takeaway not available at this outlet.",
+            cause: { domainCode: OrderDomainCode.ORDER_TYPE_UNAVAILABLE },
           });
-        if (input.type === "dine_in" && services && !services.dineIn)
+        if (input.type === "dine_in" && !services.dineIn)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Dine-in not available at this outlet.",
+            cause: { domainCode: OrderDomainCode.ORDER_TYPE_UNAVAILABLE },
           });
         if (input.type === "delivery" && !input.customer.address)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Delivery address is required.",
+            cause: { domainCode: OrderDomainCode.DELIVERY_ADDRESS_REQUIRED },
           });
 
         // ── Idempotency: check by key ──
@@ -1588,6 +1599,7 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `Menu item ${it.menuItemId} not found.`,
+              cause: { domainCode: OrderDomainCode.INVALID_SELECTION },
             });
           // Coming Soon check — server-authoritative block (cannot be bypassed via API)
           const isCategoryComingSoon =
@@ -1597,6 +1609,7 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `${menu.name} is COMING SOON and cannot be ordered yet.`,
+              cause: { domainCode: OrderDomainCode.ITEM_COMING_SOON },
             });
           }
           const av = avMap.get(it.menuItemId);
@@ -1607,6 +1620,7 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `${menu.name} is not available at this outlet.`,
+              cause: { domainCode: OrderDomainCode.ITEM_UNAVAILABLE },
             });
           // Variant handling — server authoritative
           let vName: string | null = null;
@@ -1618,17 +1632,20 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `Please select a size for ${menu.name}.`,
+              cause: { domainCode: OrderDomainCode.INVALID_SELECTION },
             });
           const variant = variantById.get(vId);
           if (!variant)
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `Variant ${vId} not found.`,
+              cause: { domainCode: OrderDomainCode.INVALID_SELECTION },
             });
           if (Number(variant.menuItemId) !== Number(it.menuItemId))
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `Variant does not belong to ${menu.name}.`,
+              cause: { domainCode: OrderDomainCode.INVALID_SELECTION },
             });
           const vAv = variantAvMap.get(variant.id);
           const variantAvailable =
@@ -1637,6 +1654,7 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `${menu.name} — ${variant.name} is not available.`,
+              cause: { domainCode: OrderDomainCode.VARIANT_UNAVAILABLE },
             });
           const basePrice = toNum(vAv?.priceOverride ?? variant.price);
           vName = variant.name;
@@ -1653,12 +1671,14 @@ export const publicRouter = router({
                 throw new TRPCError({
                   code: "BAD_REQUEST",
                   message: `Modifier option ${m.optionId} not found.`,
+                  cause: { domainCode: OrderDomainCode.INVALID_SELECTION },
                 });
               const delta = toNum(opt.priceDelta);
               if (Math.abs(delta - m.priceDelta) > 0.01)
                 throw new TRPCError({
                   code: "BAD_REQUEST",
                   message: `Invalid modifier price for ${m.name}.`,
+                  cause: { domainCode: OrderDomainCode.INVALID_SELECTION },
                 });
               modifiersTotal += delta;
               mods.push({
@@ -1673,6 +1693,7 @@ export const publicRouter = router({
               throw new TRPCError({
                 code: "BAD_REQUEST",
                 message: `Invalid modifier selection for ${m.name}. Please reselect the item.`,
+                cause: { domainCode: OrderDomainCode.INVALID_SELECTION },
               });
             }
           }
@@ -1713,6 +1734,7 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon not found.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           const c: any = crow;
           const dStatus = derivedStatus(c);
@@ -1720,22 +1742,26 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `Coupon is ${dStatus}.`,
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           const now = new Date();
           if (c.startAt && new Date(c.startAt) > now)
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon not yet active.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           if (c.endAt && new Date(c.endAt) < now)
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon expired.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           if (c.usageLimit && toNum(c.usedCount) >= toNum(c.usageLimit))
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon usage limit reached.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           if (
             c.applicableOutlets &&
@@ -1744,11 +1770,13 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon not valid for this outlet.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           if (c.orderTypes && !(c.orderTypes as string[]).includes(input.type))
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `Coupon not valid for ${input.type} orders.`,
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           // resolve customer for eligibility checks
           const { data: custForCoupon } = await supabase
@@ -1776,6 +1804,7 @@ export const publicRouter = router({
                 throw new TRPCError({
                   code: "BAD_REQUEST",
                   message: "Per-customer coupon limit reached.",
+                  cause: { domainCode: OrderDomainCode.COUPON_INVALID },
                 });
             }
           }
@@ -1783,16 +1812,19 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon only for new customers.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           if ((c as any).customerEligibility === "returning" && custCount === 0)
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon only for returning customers.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           if ((c as any).customerEligibility === "vip" && custCount < 5)
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: "Coupon only for VIP customers.",
+              cause: { domainCode: OrderDomainCode.COUPON_INVALID },
             });
           // product/category filter
           if (c.applicableProducts?.length || c.applicableCategories?.length) {
@@ -1824,6 +1856,7 @@ export const publicRouter = router({
               throw new TRPCError({
                 code: "BAD_REQUEST",
                 message: "Coupon not applicable to items in cart.",
+                cause: { domainCode: OrderDomainCode.COUPON_INVALID },
               });
           }
           let eligibleAmount = subtotal;
@@ -1867,6 +1900,7 @@ export const publicRouter = router({
             throw new TRPCError({
               code: "BAD_REQUEST",
               message: `Minimum order ₹${c.minimumOrder} required for this coupon.`,
+              cause: { domainCode: OrderDomainCode.MINIMUM_ORDER_NOT_MET },
             });
           if (c.discountType === "percentage") {
             couponDiscount = eligibleAmount * (toNum(c.discountValue) / 100);
@@ -1917,6 +1951,7 @@ export const publicRouter = router({
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: `Minimum order ₹${outlet.minimumOrder} required for this outlet.`,
+            cause: { domainCode: OrderDomainCode.MINIMUM_ORDER_NOT_MET },
           });
         }
 

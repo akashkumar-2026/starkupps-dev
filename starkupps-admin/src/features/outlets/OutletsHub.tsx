@@ -38,6 +38,8 @@ import { toast } from "sonner";
 import { nanoid } from "nanoid";
 import { IndiaStateCitySelect } from "@/components/shared/IndiaStateCitySelect";
 import { LocationPicker } from "@/components/shared/LocationPicker";
+import { OutletDeleteDialog } from "./OutletDeleteDialog";
+import { useAuth } from "@/state/auth-provider";
 
 const days = [
   "Sunday",
@@ -64,6 +66,13 @@ function OutletList({ onSelect }: { onSelect: (id: number) => void }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [cursor, setCursor] = useState<number | undefined>();
   const [history, setHistory] = useState<Array<number | undefined>>([]);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: number;
+    name: string;
+    code: string;
+  } | null>(null);
+  const { hasPermission } = useAuth();
+  const canDelete = hasPermission("outlets.delete");
   useEffect(() => {
     setCursor(undefined);
     setHistory([]);
@@ -170,15 +179,37 @@ function OutletList({ onSelect }: { onSelect: (id: number) => void }) {
                     {o.code} · {o.city || "No city"}
                   </p>
                 </div>
-                <Badge
-                  className={
-                    o.status === "active"
-                      ? "border-[#BDE0C8] bg-[#E5F2E9] text-[#2F6947]"
-                      : "border-[#E3D9CE] bg-[#F6F0E8] text-[#706356]"
-                  }
-                >
-                  {o.status}
-                </Badge>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Badge
+                    className={
+                      o.status === "active"
+                        ? "border-[#BDE0C8] bg-[#E5F2E9] text-[#2F6947]"
+                        : "border-[#E3D9CE] bg-[#F6F0E8] text-[#706356]"
+                    }
+                  >
+                    {o.status}
+                  </Badge>
+                  {canDelete && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Delete outlet ${o.name}`}
+                      // The card navigates on click, so the delete trigger has
+                      // to stop propagation or every delete opens the detail page.
+                      onClick={event => {
+                        event.stopPropagation();
+                        setPendingDelete({
+                          id: o.id,
+                          name: o.name,
+                          code: o.code,
+                        });
+                      }}
+                      className="text-[#B83D29] hover:bg-[#FBEBE7] hover:text-[#962C20]"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
               <p className="mt-3 flex items-center gap-1 text-xs text-[#75695E]">
                 <MapPin className="h-3.5 w-3.5" />
@@ -238,6 +269,13 @@ function OutletList({ onSelect }: { onSelect: (id: number) => void }) {
         </div>
       )}
       <OutletCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <OutletDeleteDialog
+        open={pendingDelete !== null}
+        onOpenChange={open => !open && setPendingDelete(null)}
+        outletId={pendingDelete?.id ?? null}
+        outletName={pendingDelete?.name ?? ""}
+        outletCode={pendingDelete?.code ?? ""}
+      />
     </>
   );
 }
@@ -751,6 +789,9 @@ function OutletCreateDialog({
 
 function OutletDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const q = trpc.outlets.byId.useQuery({ id }, { refetchOnWindowFocus: false });
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const { hasPermission } = useAuth();
+  const canDelete = hasPermission("outlets.delete");
   const [tab, setTab] = useState<
     | "overview"
     | "details"
@@ -831,15 +872,28 @@ function OutletDetail({ id, onBack }: { id: number; onBack: () => void }) {
               </p>
             )}
           </div>
-          <Badge
-            className={
-              outlet.status === "active"
-                ? "border-[#BDE0C8] bg-[#E5F2E9] text-[#2F6947]"
-                : "bg-[#F6F0E8] text-[#706356]"
-            }
-          >
-            {outlet.status}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge
+              className={
+                outlet.status === "active"
+                  ? "border-[#BDE0C8] bg-[#E5F2E9] text-[#2F6947]"
+                  : "bg-[#F6F0E8] text-[#706356]"
+              }
+            >
+              {outlet.status}
+            </Badge>
+            {canDelete && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteOpen(true)}
+                className="h-8 border-[#E7B7AC] text-xs font-bold text-[#B83D29] hover:bg-[#FBEBE7] hover:text-[#962C20]"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </Button>
+            )}
+          </div>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-[#E4DCD1] bg-white p-3 text-center">
@@ -971,6 +1025,14 @@ function OutletDetail({ id, onBack }: { id: number; onBack: () => void }) {
           </div>
         )}
       </div>
+      <OutletDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        outletId={outlet.id}
+        outletName={outlet.name}
+        outletCode={outlet.code}
+        onDeleted={onBack}
+      />
     </>
   );
 }

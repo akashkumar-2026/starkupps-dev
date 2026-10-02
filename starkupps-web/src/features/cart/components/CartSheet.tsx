@@ -15,6 +15,8 @@ import { inr } from "@/utils/format";
 import { projectEndpoint, springs } from "@/utils/motion";
 import { cn } from "@/utils/cn";
 import { errorMessage } from "@/utils/errors";
+import { classifyOrderError, orderErrorDetail } from "@/utils/order-errors";
+import { outletSupportsOrderType } from "@/utils/outlet-services";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -96,6 +98,26 @@ export function CartSheet() {
   const [couponMsg, setCouponMsg] = useState("");
 
   /**
+   * Only offer the order types this outlet actually serves.
+   *
+   * The list used to be hardcoded, so a customer could pick delivery at an
+   * outlet with delivery disabled, fill in the whole form, and only then be
+   * rejected. Falls back to the full list while the outlet is unknown, and
+   * always keeps the currently selected type visible so a stale selection
+   * cannot silently change what the customer is about to pay for.
+   */
+  const offeredOrderTypes = useMemo(() => {
+    const supported = orderTypes.filter((t) => outletSupportsOrderType(outlet?.services, t.id));
+    // Never render zero tabs, and never drop the active one.
+    if (supported.length === 0) return orderTypes;
+    if (!supported.some((t) => t.id === orderType)) return [supported[0]!, ...supported.slice(1)];
+    return supported;
+  }, [outlet?.services, orderType]);
+
+  // If the selected type stops being offered, move the customer to one that is.
+  // Declared below `form`, which this effect writes to.
+
+  /**
    * Live charge quote from the gateway (packing/delivery/tax configured in
    * Store settings).
    *
@@ -149,6 +171,17 @@ export function CartSheet() {
       }
     }
   }, [orderType, form]);
+
+  // The selected outlet may stop offering the type the customer picked (they
+  // switched outlets mid-checkout). Move them to one it does offer rather than
+  // leaving a dead tab selected.
+  useEffect(() => {
+    if (offeredOrderTypes.some((t) => t.id === orderType)) return;
+    const next = offeredOrderTypes[0];
+    if (!next) return;
+    setOrderType(next.id);
+    form.setValue("orderType", next.id, { shouldValidate: false, shouldDirty: false });
+  }, [offeredOrderTypes, orderType, form, setOrderType]);
 
   // Outlet change should reconcile cart: if outlet switched, remind user
   const handleOutletChange = (id: string) => {
@@ -366,20 +399,18 @@ export function CartSheet() {
       setCheckout(false);
       setOpen(false);
     } catch (error: unknown) {
+      // Classified on the server's domain code, not on its English message.
+      // The old `/not available/i` branch also matched "Delivery not available
+      // at this outlet.", so customers were told their *items* were unavailable
+      // when the outlet simply did not offer delivery.
+      const failure = classifyOrderError(error);
       const msg = errorMessage(error) ?? "Failed to place order.";
-      // Handle specific server errors with actionable guidance
-      if (/COMING SOON/i.test(msg)) {
-        toast.error("Coming soon — cannot be ordered yet.", { description: msg });
-      } else if (/not available/i.test(msg)) {
-        toast.error("Some items are unavailable at this outlet.", { description: msg });
-      } else if (/coupon/i.test(msg)) {
-        toast.error("Coupon error", { description: msg });
+      toast.error(failure.title, {
+        description: orderErrorDetail(error) ?? msg,
+      });
+      if (failure.kind === "coupon_invalid") {
         setCouponValid(false);
         setCouponMsg(msg);
-      } else if (/minimum order/i.test(msg)) {
-        toast.error("Minimum order not met", { description: msg });
-      } else {
-        toast.error("Order failed", { description: msg });
       }
     }
   };
@@ -554,8 +585,17 @@ export function CartSheet() {
                     )}
                   </div>
 
-                  <div className="mb-4 grid grid-cols-3 gap-2 rounded-full border border-border bg-secondary p-1">
-                    {orderTypes.map((t) => (
+                  <div
+                    className={cn(
+                      "mb-4 grid gap-2 rounded-full border border-border bg-secondary p-1",
+                      offeredOrderTypes.length === 3
+                        ? "grid-cols-3"
+                        : offeredOrderTypes.length === 2
+                          ? "grid-cols-2"
+                          : "grid-cols-1",
+                    )}
+                  >
+                    {offeredOrderTypes.map((t) => (
                       <Pressable
                         key={t.id}
                         onPointerDown={() => setOrderType(t.id)}
@@ -864,8 +904,17 @@ export function CartSheet() {
                       <span className="font-semibold">{outlet?.name ?? "—"}</span>
                     </div>
 
-                    <div className="mb-4 grid grid-cols-3 gap-2 rounded-full border border-border bg-secondary p-1">
-                      {orderTypes.map((t) => (
+                    <div
+                      className={cn(
+                        "mb-4 grid gap-2 rounded-full border border-border bg-secondary p-1",
+                        offeredOrderTypes.length === 3
+                          ? "grid-cols-3"
+                          : offeredOrderTypes.length === 2
+                            ? "grid-cols-2"
+                            : "grid-cols-1",
+                      )}
+                    >
+                      {offeredOrderTypes.map((t) => (
                         <Pressable
                           key={t.id}
                           type="button"

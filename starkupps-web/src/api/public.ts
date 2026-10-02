@@ -23,6 +23,8 @@ import type {
   PublicSiteSettings,
 } from "@/types";
 import type { ChargeQuote, ApiOrderType } from "@/types/orders";
+import type { OrderDomainCode } from "@/config/order-error-codes";
+import { TrpcError } from "@/utils/trpc-error";
 
 // ── tRPC fallback ────────────────────────────────────────────────────────────
 
@@ -60,13 +62,49 @@ function trpcUrl(procedure: string, input?: unknown): string {
   return `${trpcApiBase}/${procedure}?input=${encodeURIComponent(superjson.stringify(input))}`;
 }
 
+/**
+ * Pull a human-usable message and a stable domain code out of a tRPC error body.
+ *
+ * tRPC answers a failed call with
+ *   `{ error: { json: { message, data: { code, domainCode? } } } }`
+ * so the raw body is never something to show a customer, and regex-matching it
+ * is how "Delivery not available at this outlet." came to be reported as
+ * "Some items are unavailable at this outlet." (see `classifyOrderError`).
+ *
+ * Falls back to the raw text when the body is not the expected envelope — a
+ * proxy in front of the API may return plain text — and to `undefined` for the
+ * code, which sends callers down their fallback path rather than guessing.
+ */
+function parseTrpcError(
+  text: string,
+  status: number,
+  procedure: string,
+): { message: string; domainCode: OrderDomainCode | undefined } {
+  const fallback = text || `tRPC ${procedure} failed: ${status}`;
+  try {
+    const payload = JSON.parse(text) as {
+      error?: { json?: { message?: unknown; data?: { domainCode?: unknown } } };
+    };
+    const error = payload?.error?.json;
+    const code = error?.data?.domainCode;
+    return {
+      message: typeof error?.message === "string" && error.message ? error.message : fallback,
+      domainCode: typeof code === "string" ? (code as OrderDomainCode) : undefined,
+    };
+  } catch {
+    return { message: fallback, domainCode: undefined };
+  }
+}
+
 async function trpcQuery<T>(procedure: string, input?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(trpcUrl(procedure, input), {
     credentials: "include",
     signal: signal ?? null,
   });
   if (!response.ok) {
-    throw new ApiError(`tRPC ${procedure} failed: ${response.status}`, response.status, procedure);
+    const text = await response.text().catch(() => "");
+    const { message, domainCode } = parseTrpcError(text, response.status, procedure);
+    throw new TrpcError(message, response.status, procedure, domainCode);
   }
   return unwrapTrpc<T>(await response.json(), procedure);
 }
@@ -81,11 +119,8 @@ async function trpcPost<T>(procedure: string, input: unknown): Promise<T> {
   });
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new ApiError(
-      text || `tRPC ${procedure} failed: ${response.status}`,
-      response.status,
-      procedure,
-    );
+    const { message, domainCode } = parseTrpcError(text, response.status, procedure);
+    throw new TrpcError(message, response.status, procedure, domainCode);
   }
   return unwrapTrpc<T>(await response.json(), procedure);
 }

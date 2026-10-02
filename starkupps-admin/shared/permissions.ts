@@ -23,6 +23,9 @@ export type Permission =
   | "outlets.read"
   | "outlets.create"
   | "outlets.update"
+  /** Destroys the outlet and its operational data. Owner-only by design —
+   *  managers get `outlets.update` and can deactivate an outlet instead. */
+  | "outlets.delete"
   | "delivery.read"
   | "delivery.assign"
   | "riders.manage"
@@ -71,6 +74,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "outlets.read",
     "outlets.create",
     "outlets.update",
+    "outlets.delete",
     "delivery.read",
     "delivery.assign",
     "riders.manage",
