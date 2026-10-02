@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.18"
   }
   graphql_public: {
     Tables: {
@@ -756,6 +756,7 @@ export type Database = {
           shortcode: string
           sortOrder: number
           thumbnailUrl: string | null
+          previewVideoUrl: string | null
           type: string
           updatedAt: string
           url: string
@@ -768,6 +769,7 @@ export type Database = {
           shortcode: string
           sortOrder?: number
           thumbnailUrl?: string | null
+          previewVideoUrl?: string | null
           type?: string
           updatedAt?: string
           url: string
@@ -780,6 +782,7 @@ export type Database = {
           shortcode?: string
           sortOrder?: number
           thumbnailUrl?: string | null
+          previewVideoUrl?: string | null
           type?: string
           updatedAt?: string
           url?: string
@@ -1902,6 +1905,7 @@ export type Database = {
           purpose: string
           token_hash: string
           used: boolean
+          used_at: string | null
           user_id: number
         }
         Insert: {
@@ -1911,6 +1915,7 @@ export type Database = {
           purpose?: string
           token_hash: string
           used?: boolean
+          used_at?: string | null
           user_id: number
         }
         Update: {
@@ -1920,6 +1925,7 @@ export type Database = {
           purpose?: string
           token_hash?: string
           used?: boolean
+          used_at?: string | null
           user_id?: number
         }
         Relationships: [
@@ -2439,11 +2445,17 @@ export type Database = {
           concurrent_slot: number | null
           created_at: string
           device_fingerprint: string | null
+          device_label: string | null
           expires_at: string
+          family_id: string
           id: number
           ip_address: unknown
           last_used_at: string
+          remember: boolean
+          replaced_by: number | null
           revoked_at: string | null
+          revoked_reason: string | null
+          rotated_at: string | null
           session_version_at_creation: number
           token_hash: string
           user_agent: string | null
@@ -2454,11 +2466,17 @@ export type Database = {
           concurrent_slot?: number | null
           created_at?: string
           device_fingerprint?: string | null
+          device_label?: string | null
           expires_at: string
+          family_id: string
           id?: number
           ip_address?: unknown
           last_used_at?: string
+          remember?: boolean
+          replaced_by?: number | null
           revoked_at?: string | null
+          revoked_reason?: string | null
+          rotated_at?: string | null
           session_version_at_creation?: number
           token_hash: string
           user_agent?: string | null
@@ -2469,17 +2487,30 @@ export type Database = {
           concurrent_slot?: number | null
           created_at?: string
           device_fingerprint?: string | null
+          device_label?: string | null
           expires_at?: string
+          family_id?: string
           id?: number
           ip_address?: unknown
           last_used_at?: string
+          remember?: boolean
+          replaced_by?: number | null
           revoked_at?: string | null
+          revoked_reason?: string | null
+          rotated_at?: string | null
           session_version_at_creation?: number
           token_hash?: string
           user_agent?: string | null
           user_id?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "sessions_replaced_by_fkey"
+            columns: ["replaced_by"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "sessions_user_id_fkey"
             columns: ["user_id"]
@@ -2546,6 +2577,132 @@ export type Database = {
           id?: number
           name?: string
           startedAt?: string
+        }
+        Relationships: []
+      }
+      site_settings: {
+        Row: {
+          address: string
+          addressDetail: string
+          brandName: string
+          fssaiLicense: string
+          galleryBody: string
+          galleryHeading: string
+          galleryImages: Json
+          heroBadge: string
+          heroCtaLabel: string
+          heroHeading: string
+          heroSubheading: string
+          hoursNote: string
+          hoursShort: string
+          hoursSummary: string
+          id: number
+          latitude: number | null
+          longitude: number | null
+          mapsQuery: string
+          menuEmptyMessage: string
+          menuHeading: string
+          metaDescription: string
+          metaOgDescription: string
+          metaTitle: string
+          openBadge: string
+          phoneDigits: string
+          statOrdersLabel: string
+          statPickupLabel: string
+          statRatingLabel: string
+          tagline: string
+          trustClaim1: string
+          trustClaim2: string
+          trustClaim3: string
+          trustHeading: string
+          trustPickupCaption: string
+          trustPickupStat: string
+          trustPremadeCaption: string
+          trustPremadeStat: string
+          updatedAt: string
+          whatsappNumber: string
+        }
+        Insert: {
+          address?: string
+          addressDetail?: string
+          brandName?: string
+          fssaiLicense?: string
+          galleryBody?: string
+          galleryHeading?: string
+          galleryImages?: Json
+          heroBadge?: string
+          heroCtaLabel?: string
+          heroHeading?: string
+          heroSubheading?: string
+          hoursNote?: string
+          hoursShort?: string
+          hoursSummary?: string
+          id?: number
+          latitude?: number | null
+          longitude?: number | null
+          mapsQuery?: string
+          menuEmptyMessage?: string
+          menuHeading?: string
+          metaDescription?: string
+          metaOgDescription?: string
+          metaTitle?: string
+          openBadge?: string
+          phoneDigits?: string
+          statOrdersLabel?: string
+          statPickupLabel?: string
+          statRatingLabel?: string
+          tagline?: string
+          trustClaim1?: string
+          trustClaim2?: string
+          trustClaim3?: string
+          trustHeading?: string
+          trustPickupCaption?: string
+          trustPickupStat?: string
+          trustPremadeCaption?: string
+          trustPremadeStat?: string
+          updatedAt?: string
+          whatsappNumber?: string
+        }
+        Update: {
+          address?: string
+          addressDetail?: string
+          brandName?: string
+          fssaiLicense?: string
+          galleryBody?: string
+          galleryHeading?: string
+          galleryImages?: Json
+          heroBadge?: string
+          heroCtaLabel?: string
+          heroHeading?: string
+          heroSubheading?: string
+          hoursNote?: string
+          hoursShort?: string
+          hoursSummary?: string
+          id?: number
+          latitude?: number | null
+          longitude?: number | null
+          mapsQuery?: string
+          menuEmptyMessage?: string
+          menuHeading?: string
+          metaDescription?: string
+          metaOgDescription?: string
+          metaTitle?: string
+          openBadge?: string
+          phoneDigits?: string
+          statOrdersLabel?: string
+          statPickupLabel?: string
+          statRatingLabel?: string
+          tagline?: string
+          trustClaim1?: string
+          trustClaim2?: string
+          trustClaim3?: string
+          trustHeading?: string
+          trustPickupCaption?: string
+          trustPickupStat?: string
+          trustPremadeCaption?: string
+          trustPremadeStat?: string
+          updatedAt?: string
+          whatsappNumber?: string
         }
         Relationships: []
       }
@@ -3180,7 +3337,9 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_expired_password_resets: { Args: never; Returns: number }
       cleanup_expired_rate_limits: { Args: never; Returns: undefined }
+      cleanup_expired_sessions: { Args: never; Returns: number }
       is_active_staff: { Args: { uid: number }; Returns: boolean }
       is_member_of_outlet: {
         Args: { oid: number; uid: number }
