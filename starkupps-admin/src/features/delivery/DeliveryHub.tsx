@@ -17,10 +17,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { trpc } from "@/api/trpc";
-import { useAdminStream } from "@/hooks/use-admin-stream";
+import {
+  useAdaptiveRefetchInterval,
+  useAdminStream,
+} from "@/hooks/use-admin-stream";
 import { useOutlet } from "@/state/outlet-provider";
 import { Loader2, Plus, Truck } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 export default function DeliveryHub() {
@@ -60,16 +63,22 @@ export default function DeliveryHub() {
 }
 
 function LiveTab({ outletId }: { outletId: number | null }) {
+  // The live board is relay-driven; the 10 s poll is the fallback and only runs
+  // at that rate while the relay is down.
+  const deliveryPollMs = useAdaptiveRefetchInterval(90_000, 10_000);
   const q = trpc.delivery.live.useQuery(outletId ? { outletId } : undefined, {
-    refetchInterval: 10000,
+    refetchInterval: deliveryPollMs,
   });
+  const resync = useCallback(() => {
+    void q.refetch();
+  }, [q]);
   useAdminStream({
     enabled: true,
     topic: "deliveries",
     outletId: outletId ?? "all",
-    onEvent: () => {
-      void q.refetch();
-    },
+    onEvent: resync,
+    // A reconnect may have missed assignments made while the socket was down.
+    onSync: resync,
   });
   const assign = trpc.delivery.assignments.assign.useMutation({
     onSuccess: () => {
