@@ -21,7 +21,8 @@ export type CartLine = {
   variantQuantity: number | null;
   variantUnit: string | null;
   name: string;
-  image: string;
+  /** Uploaded image URL, or null when the owner has not set one. */
+  image: string | null;
   unitPrice: number;
   qty: number;
   optionLabels: string[];
@@ -32,5 +33,6 @@ export type CartLine = {
 export type CartProduct = {
   id: number;
   name: string;
-  image: string;
+  /** Uploaded image URL, or null when the owner has not set one. */
+  image: string | null;
 };
