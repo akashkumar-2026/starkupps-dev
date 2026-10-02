@@ -15,10 +15,17 @@ src/routeTree.gen.ts
 coverage/
 
 # ── Environment ───────────────────────────────────────────────────────────
-# `.env.example` is committed; every other env file may hold real credentials.
+# `.env.example` and `.env.production` are committed; every other env file may
+# hold real credentials.
+#
+# `.env.production` is safe to track because it only contains values that are
+# public by design and get inlined into the browser bundle anyway (API origin,
+# Supabase project URL, and the anon/publishable keys). Without it a Vercel build
+# finds no API base URL and calls its own origin, so every request 404s.
 .env
 .env.*
 !.env.example
+!.env.production
 
 # ── Logs ──────────────────────────────────────────────────────────────────
 logs
