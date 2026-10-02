@@ -11,6 +11,7 @@ import { consume } from "../auth/rate-limit";
 import { clientThrottleKey } from "../auth/client-ip";
 import { escapePostgrestOr, normalizeSelectedModifiers } from "../db/index";
 import { publicProcedure, router } from "../lib/trpc";
+import { resolveInstagramThumbnail } from "../lib/instagram-thumbnails";
 import { getSql, getSupabaseAdmin } from "../db/supabase";
 import {
   INSTAGRAM_LIMITS,
@@ -186,6 +187,125 @@ export function computeOrderQuote(input: {
 }
 
 export const publicRouter = router({
+  // ── Storefront business facts ──
+  //
+  // Read straight from `public.site_settings`, which the admin panel edits.
+  // Previously these values were string literals compiled into the storefront
+  // bundle (phone, address, hours, FSSAI licence, hero copy, the stats strip,
+  // the trust claims). Serving them from here is what makes them correctable
+  // without a redeploy, and what stops the site asserting claims that the
+  // database does not support.
+  //
+  // Only fields the storefront renders are exposed. Nothing here is sensitive:
+  // it is the same contact information already printed on the page.
+  site: publicProcedure.query(async ({ ctx }) => {
+    publicRateLimit(clientThrottleKey(ctx.req, "site_content"));
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("site_settings")
+      .select(
+        "brandName,tagline,phoneDigits,whatsappNumber,address,addressDetail,mapsQuery,latitude,longitude,hoursSummary,hoursShort,hoursNote,fssaiLicense,heroHeading,heroSubheading,heroBadge,heroCtaLabel,openBadge,statRatingLabel,statOrdersLabel,statPickupLabel,trustHeading,trustClaim1,trustClaim2,trustClaim3,trustPickupStat,trustPickupCaption,trustPremadeStat,trustPremadeCaption,galleryHeading,galleryBody,galleryImages,menuHeading,menuEmptyMessage,metaTitle,metaDescription,metaOgDescription,updatedAt"
+      )
+      .eq("id", 1)
+      .limit(1)
+      .maybeSingle();
+    if (error)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    // No row is a real, reportable state (a fresh database that has not been
+    // configured yet), not something to paper over with defaults.
+    if (!data)
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Storefront settings have not been configured yet.",
+      });
+    const row = data as Record<string, unknown>;
+    const str = (key: string): string => String(row[key] ?? "");
+    const num = (key: string): number | null =>
+      row[key] === null || row[key] === undefined ? null : Number(row[key]);
+    const images = Array.isArray(row.galleryImages)
+      ? (row.galleryImages as any[]).map(img => ({
+          url: String(img?.url ?? ""),
+          alt: String(img?.alt ?? ""),
+          span:
+            img?.span === "sm:col-span-2"
+              ? ("sm:col-span-2" as const)
+              : ("" as const),
+        }))
+      : [];
+    return {
+      brandName: str("brandName"),
+      tagline: str("tagline"),
+      phoneDigits: str("phoneDigits"),
+      whatsappNumber: str("whatsappNumber"),
+      address: str("address"),
+      addressDetail: str("addressDetail"),
+      mapsQuery: str("mapsQuery"),
+      latitude: num("latitude"),
+      longitude: num("longitude"),
+      hoursSummary: str("hoursSummary"),
+      hoursShort: str("hoursShort"),
+      hoursNote: str("hoursNote"),
+      fssaiLicense: str("fssaiLicense"),
+      heroHeading: str("heroHeading"),
+      heroSubheading: str("heroSubheading"),
+      heroBadge: str("heroBadge"),
+      heroCtaLabel: str("heroCtaLabel"),
+      openBadge: str("openBadge"),
+      statRatingLabel: str("statRatingLabel"),
+      statOrdersLabel: str("statOrdersLabel"),
+      statPickupLabel: str("statPickupLabel"),
+      trustHeading: str("trustHeading"),
+      trustClaim1: str("trustClaim1"),
+      trustClaim2: str("trustClaim2"),
+      trustClaim3: str("trustClaim3"),
+      trustPickupStat: str("trustPickupStat"),
+      trustPickupCaption: str("trustPickupCaption"),
+      trustPremadeStat: str("trustPremadeStat"),
+      trustPremadeCaption: str("trustPremadeCaption"),
+      galleryHeading: str("galleryHeading"),
+      galleryBody: str("galleryBody"),
+      galleryImages: images,
+      menuHeading: str("menuHeading"),
+      menuEmptyMessage: str("menuEmptyMessage"),
+      metaTitle: str("metaTitle"),
+      metaDescription: str("metaDescription"),
+      metaOgDescription: str("metaOgDescription"),
+      updatedAt: String(row.updatedAt ?? ""),
+    };
+  }),
+
+  // ── Customer reviews shown in the storefront trust section ──
+  //
+  // Reads `public.testimonials`, which the admin panel manages under
+  // Content > Testimonials. The storefront previously rendered three invented
+  // reviews from a code constant and labelled them "Google review".
+  reviews: publicProcedure.query(async ({ ctx }) => {
+    publicRateLimit(clientThrottleKey(ctx.req, "site_reviews"));
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("testimonials")
+      .select("id,authorName,authorRole,content,rating,createdAt")
+      .eq("active", true)
+      .order("createdAt", { ascending: false })
+      .limit(12);
+    if (error)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    return ((data ?? []) as any[]).map(row => ({
+      id: Number(row.id),
+      authorName: String(row.authorName ?? ""),
+      authorRole: row.authorRole ?? null,
+      content: String(row.content ?? ""),
+      rating: Number(row.rating ?? 5),
+      createdAt: String(row.createdAt ?? ""),
+    }));
+  }),
+
   // ── Outlets: only active, limited fields (no internal metrics) ──
   outlets: router({
     list: publicProcedure
@@ -299,16 +419,21 @@ export const publicRouter = router({
         publicRateLimit(clientThrottleKey(ctx.req, "menu_list"));
         const supabase = getSupabaseAdmin();
 
-        // Fetch categories for join/sort
-        const { data: allCategories } = await supabase
-          .from("menu_categories")
-          .select("*")
-          .order("sortOrder", { ascending: true });
-        const catById = new Map<number, any>(
-          (allCategories ?? []).map((c: any) => [c.id, c])
-        );
+        // This used to run eight strictly sequential PostgREST round-trips
+        // (categories → items → availability → variants → outlet variants →
+        // assignments → groups → options). On the storefront's critical path that
+        // is the difference between a sub-second menu and a multi-second one.
+        //
+        // Regrouped into three parallel levels, each level depending only on the
+        // id set the previous one produced:
+        //   L1  categories, items, outlet item availability
+        //   L2  variants, outlet variant availability, item→group assignments
+        //   L3  modifier groups, modifier options
+        //
+        // Errors are still fatal. A missing table or a bad filter must surface as
+        // an error, never as a partially-built menu.
 
-        // Build menu_items query — comingSoon items remain visible regardless of available filter (they are blurred, not hidden)
+        // ── Level 1 ──
         let itemQuery = supabase.from("menu_items").select("*");
         if (input?.categoryId)
           itemQuery = itemQuery.eq("categoryId", input.categoryId);
@@ -316,16 +441,46 @@ export const publicRouter = router({
           const escaped = escapePostgrestOr(input.search);
           itemQuery = itemQuery.ilike("name", `%${escaped}%`);
         }
+        // comingSoon items stay visible regardless of `available` (they render
+        // blurred, not hidden), so the filter stays as-is.
         if (!input?.includeUnavailable)
           itemQuery = itemQuery.eq("available", true);
 
-        const { data: itemRowsRaw, error: itemErr } = await itemQuery;
-        if (itemErr)
+        const [categoriesRes, itemsRes, itemAvailabilityRes] =
+          await Promise.all([
+            supabase
+              .from("menu_categories")
+              .select("*")
+              .order("sortOrder", { ascending: true }),
+            itemQuery,
+            input?.outletId
+              ? supabase
+                  .from("outlet_menu_availability")
+                  .select("menuItemId,available")
+                  .eq("outletId", input.outletId)
+              : Promise.resolve({ data: [] as any[], error: null }),
+          ]);
+        if (categoriesRes.error)
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: itemErr.message,
+            message: categoriesRes.error.message,
           });
-        const itemRows = (itemRowsRaw ?? []) as any[];
+        if (itemsRes.error)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: itemsRes.error.message,
+          });
+        if (itemAvailabilityRes.error)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: itemAvailabilityRes.error.message,
+          });
+
+        const allCategories = (categoriesRes.data ?? []) as any[];
+        const itemRows = (itemsRes.data ?? []) as any[];
+        const catById = new Map<number, any>(
+          allCategories.map((c: any) => [c.id, c])
+        );
 
         // Enrich with category join and sort by category sortOrder, category name, item name
         const rows = itemRows
@@ -346,81 +501,116 @@ export const publicRouter = router({
 
         // outlet-scoped availability (product-level, no price)
         const availabilityMap = new Map<number, { available: boolean }>();
-        if (input?.outletId) {
-          const { data: avRows } = await supabase
-            .from("outlet_menu_availability")
-            .select("*")
-            .eq("outletId", input.outletId);
-          for (const r of (avRows ?? []) as any[])
-            availabilityMap.set(r.menuItemId, { available: r.available });
+        for (const r of (itemAvailabilityRes.data ?? []) as any[])
+          availabilityMap.set(r.menuItemId, { available: r.available });
+
+        const allItemIds = rows.map(r => r.item.id);
+
+        // ── Level 2 ──
+        const [variantsRes, outletVariantsRes, assignmentsRes] =
+          await Promise.all([
+            allItemIds.length
+              ? supabase
+                  .from("menu_item_variants")
+                  .select("*")
+                  .in("menuItemId", allItemIds)
+              : Promise.resolve({ data: [] as any[], error: null }),
+            input?.outletId
+              ? supabase
+                  .from("outlet_variant_availability")
+                  .select("variantId,available,priceOverride")
+                  .eq("outletId", input.outletId)
+              : Promise.resolve({ data: [] as any[], error: null }),
+            allItemIds.length
+              ? supabase
+                  .from("menu_item_modifiers")
+                  .select("menuItemId,modifierGroupId")
+                  .in("menuItemId", allItemIds)
+              : Promise.resolve({ data: [] as any[], error: null }),
+          ]);
+        for (const res of [
+          variantsRes,
+          outletVariantsRes,
+          assignmentsRes,
+        ] as const) {
+          if (res.error)
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: res.error.message,
+            });
         }
 
-        // variants bulk fetch
-        const allItemIds = rows.map(r => r.item.id);
         const variantMap = new Map<number, any[]>();
+        for (const v of (variantsRes.data ?? []) as any[]) {
+          const arr = variantMap.get(v.menuItemId);
+          if (arr) arr.push(v);
+          else variantMap.set(v.menuItemId, [v]);
+        }
         const variantAvailabilityMap = new Map<
           number,
           { available: boolean; priceOverride: number | null }
         >();
-        if (allItemIds.length) {
-          const { data: vRows } = await supabase
-            .from("menu_item_variants")
-            .select("*")
-            .in("menuItemId", allItemIds);
-          for (const v of (vRows ?? []) as any[]) {
-            const arr = variantMap.get(v.menuItemId) ?? [];
-            arr.push(v);
-            variantMap.set(v.menuItemId, arr);
-          }
-          if (input?.outletId) {
-            const { data: ovRows } = await supabase
-              .from("outlet_variant_availability")
-              .select("*")
-              .eq("outletId", input.outletId);
-            for (const r of (ovRows ?? []) as any[])
-              variantAvailabilityMap.set(r.variantId, {
-                available: r.available,
-                priceOverride: r.priceOverride ? toNum(r.priceOverride) : null,
-              });
-          }
-        }
+        for (const r of (outletVariantsRes.data ?? []) as any[])
+          variantAvailabilityMap.set(r.variantId, {
+            available: r.available,
+            priceOverride: r.priceOverride ? toNum(r.priceOverride) : null,
+          });
 
-        // modifiers: bulk fetch groups+options for all items
-        const modifierMap = new Map<number, any[]>();
-        if (allItemIds.length) {
-          const { data: assignments } = await supabase
-            .from("menu_item_modifiers")
-            .select("*")
-            .in("menuItemId", allItemIds);
-          const list = (assignments ?? []) as any[];
-          const groupIds = Array.from(
-            new Set(list.map((a: any) => a.modifierGroupId))
-          );
-          if (groupIds.length) {
-            const [{ data: groups }, { data: opts }] = await Promise.all([
-              supabase.from("modifier_groups").select("*").in("id", groupIds),
-              supabase
+        // ── Level 3 ──
+        const assignments = (assignmentsRes.data ?? []) as any[];
+        const groupIds = Array.from(
+          new Set(assignments.map((a: any) => a.modifierGroupId))
+        );
+        const [groupsRes, optsRes] = await Promise.all([
+          groupIds.length
+            ? supabase.from("modifier_groups").select("*").in("id", groupIds)
+            : Promise.resolve({ data: [] as any[], error: null }),
+          groupIds.length
+            ? supabase
                 .from("modifier_options")
                 .select("*")
-                .in("groupId", groupIds),
-            ]);
-            const groupWithOpts = (groups ?? []).map((g: any) => ({
+                .in("groupId", groupIds)
+            : Promise.resolve({ data: [] as any[], error: null }),
+        ]);
+        if (groupsRes.error)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: groupsRes.error.message,
+          });
+        if (optsRes.error)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: optsRes.error.message,
+          });
+
+        const optionsByGroup = new Map<number, any[]>();
+        for (const o of (optsRes.data ?? []) as any[]) {
+          const arr = optionsByGroup.get(o.groupId);
+          if (arr) arr.push(o);
+          else optionsByGroup.set(o.groupId, [o]);
+        }
+        const modifierMap = new Map<number, any[]>();
+        const groupById = new Map<number, any>(
+          ((groupsRes.data ?? []) as any[]).map((g: any) => [
+            g.id,
+            {
               ...g,
-              options: (opts ?? [])
-                .filter((o: any) => o.groupId === g.id)
-                .map((o: any) => ({ ...o, priceDelta: toNum(o.priceDelta) })),
-            }));
-            const groupById = new Map(groupWithOpts.map((g: any) => [g.id, g]));
-            for (const a of list) {
-              const arr = modifierMap.get(a.menuItemId) ?? [];
-              const g = groupById.get(a.modifierGroupId);
-              if (g) arr.push(g);
-              modifierMap.set(a.menuItemId, arr);
-            }
-          }
+              options: (optionsByGroup.get(g.id) ?? []).map((o: any) => ({
+                ...o,
+                priceDelta: toNum(o.priceDelta),
+              })),
+            },
+          ])
+        );
+        for (const a of assignments) {
+          const g = groupById.get(a.modifierGroupId);
+          if (!g) continue;
+          const arr = modifierMap.get(a.menuItemId);
+          if (arr) arr.push(g);
+          else modifierMap.set(a.menuItemId, [g]);
         }
 
-        const categories = (allCategories ?? []).sort(
+        const categories = allCategories.sort(
           (a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
         );
 
@@ -909,7 +1099,7 @@ export const publicRouter = router({
     const { data: postRows, error: postErr } = await supabase
       .from("instagram_posts")
       .select(
-        "id,url,shortcode,type,caption,thumbnailUrl,sortOrder,isActive,createdAt,updatedAt"
+        "id,url,shortcode,type,caption,thumbnailUrl,previewVideoUrl,sortOrder,isActive,createdAt,updatedAt"
       )
       .eq("isActive", true)
       .order("sortOrder", { ascending: true })
@@ -928,6 +1118,7 @@ export const publicRouter = router({
       type: row.type === "reel" ? ("reel" as const) : ("post" as const),
       caption: row.caption ?? null,
       thumbnailUrl: row.thumbnailUrl ?? null,
+      previewVideoUrl: row.previewVideoUrl ?? null,
       sortOrder: Number(row.sortOrder ?? 0),
       isActive: Boolean(row.isActive),
       createdAt: String(row.createdAt ?? ""),
@@ -945,6 +1136,33 @@ export const publicRouter = router({
       ),
     };
   }),
+
+  /** Public cover-image lookup, separate so resolving images never delays feed copy. */
+  instagramThumbnails: publicProcedure
+    .input(
+      z.object({
+        shortcodes: z
+          .array(
+            z
+              .string()
+              .trim()
+              .regex(/^[A-Za-z0-9_-]{1,64}$/)
+          )
+          .min(1)
+          .max(INSTAGRAM_LIMITS.maxItems),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      publicRateLimit(clientThrottleKey(ctx.req, "instagram_thumbnails"));
+      const shortcodes = [...new Set(input.shortcodes)];
+      const entries = await Promise.all(
+        shortcodes.map(
+          async shortcode =>
+            [shortcode, await resolveInstagramThumbnail(shortcode)] as const
+        )
+      );
+      return Object.fromEntries(entries);
+    }),
 
   // ── Storefront charge quote (packing/delivery/taxes for an outlet) ──
   settings: router({
