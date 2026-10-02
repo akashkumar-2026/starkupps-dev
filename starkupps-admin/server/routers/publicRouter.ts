@@ -20,6 +20,16 @@ import {
   sanitizeProfileHandle,
 } from "@shared/instagram";
 
+/** One day of the store's weekly schedule, as served to the storefront. */
+export type PublicWeeklyHour = {
+  /** 0 = Sunday, matching `outlet_hours.dayOfWeek` and JS `Date#getDay()`. */
+  dayOfWeek: number;
+  isOpen: boolean;
+  /** `HH:mm` 24-hour, or null when the day is closed / unset. */
+  openTime: string | null;
+  closeTime: string | null;
+};
+
 function toNum(v: unknown) {
   return Number(v ?? 0);
 }
@@ -204,7 +214,7 @@ export const publicRouter = router({
     const { data, error } = await supabase
       .from("site_settings")
       .select(
-        "brandName,tagline,phoneDigits,whatsappNumber,address,addressDetail,mapsQuery,latitude,longitude,hoursSummary,hoursShort,hoursNote,fssaiLicense,heroHeading,heroSubheading,heroBadge,heroCtaLabel,openBadge,statRatingLabel,statOrdersLabel,statPickupLabel,trustHeading,trustClaim1,trustClaim2,trustClaim3,trustPickupStat,trustPickupCaption,trustPremadeStat,trustPremadeCaption,galleryHeading,galleryBody,galleryImages,menuHeading,menuEmptyMessage,metaTitle,metaDescription,metaOgDescription,updatedAt"
+        "brandName,tagline,phoneDigits,whatsappNumber,address,addressDetail,mapsQuery,latitude,longitude,hoursSummary,hoursShort,hoursNote,openTime,closeTime,closedDays,fssaiLicense,heroHeading,heroSubheading,heroBadge,heroCtaLabel,openBadge,statRatingLabel,statOrdersLabel,statPickupLabel,trustHeading,trustClaim1,trustClaim2,trustClaim3,trustPickupStat,trustPickupCaption,trustPremadeStat,trustPremadeCaption,galleryHeading,galleryBody,galleryImages,menuHeading,menuEmptyMessage,metaTitle,metaDescription,metaOgDescription,updatedAt"
       )
       .eq("id", 1)
       .limit(1)
@@ -225,6 +235,63 @@ export const publicRouter = router({
     const str = (key: string): string => String(row[key] ?? "");
     const num = (key: string): number | null =>
       row[key] === null || row[key] === undefined ? null : Number(row[key]);
+
+    // Authoritative schedule, in priority order:
+    //   1. per-day `outlet_hours` (Admin > Outlets > Operating Hours)
+    //   2. the outlet's own opening/closing pair
+    //   3. `site_settings.openTime` / `closeTime` / `closedDays`
+    //
+    // (3) is the only source that exists on a deployment with no `outlets` row,
+    // which is why the badge previously resolved to "unknown" and silently
+    // reverted to the free-text prose fields.
+    const { data: outletRows } = await supabase
+      .from("outlets")
+      .select("id,timezone,openingTime,closingTime")
+      .eq("status", "active")
+      .order("id", { ascending: true })
+      .limit(1);
+    const primaryOutlet = (outletRows ?? [])[0] as any;
+    let weeklyHours: PublicWeeklyHour[] = [];
+    if (primaryOutlet) {
+      const { data: hourRows } = await supabase
+        .from("outlet_hours")
+        .select("dayOfWeek,isOpen,openTime,closeTime")
+        .eq("outletId", primaryOutlet.id)
+        .order("dayOfWeek", { ascending: true });
+      weeklyHours = (hourRows ?? []).map((h: any) => ({
+        dayOfWeek: Number(h.dayOfWeek),
+        isOpen: Boolean(h.isOpen),
+        openTime: (h.openTime as string | null) ?? null,
+        closeTime: (h.closeTime as string | null) ?? null,
+      }));
+    }
+
+    const hasUsableDay = weeklyHours.some(
+      day => day.isOpen && day.openTime && day.closeTime
+    );
+    if (!hasUsableDay) {
+      const openTime =
+        (primaryOutlet?.openingTime as string | undefined) || str("openTime");
+      const closeTime =
+        (primaryOutlet?.closingTime as string | undefined) || str("closeTime");
+      if (openTime && closeTime) {
+        // `closedDays` holds ISO weekday numbers (1=Mon..7=Sun); `dayOfWeek` is
+        // 0=Sun, hence the modulo when mapping one onto the other.
+        const closed = new Set(
+          str("closedDays")
+            .split(",")
+            .map(part => Number(part.trim()))
+            .filter(value => Number.isFinite(value) && value >= 1 && value <= 7)
+            .map(iso => iso % 7)
+        );
+        weeklyHours = Array.from({ length: 7 }, (_, dayOfWeek) => ({
+          dayOfWeek,
+          isOpen: !closed.has(dayOfWeek),
+          openTime,
+          closeTime,
+        }));
+      }
+    }
     const images = Array.isArray(row.galleryImages)
       ? (row.galleryImages as any[]).map(img => ({
           url: String(img?.url ?? ""),
@@ -248,6 +315,11 @@ export const publicRouter = router({
       hoursSummary: str("hoursSummary"),
       hoursShort: str("hoursShort"),
       hoursNote: str("hoursNote"),
+      // Structured schedule: what the storefront renders and evaluates against,
+      // rather than the owner's free-text summary which can contradict it.
+      timezone:
+        (primaryOutlet?.timezone as string | undefined) || "Asia/Kolkata",
+      weeklyHours,
       fssaiLicense: str("fssaiLicense"),
       heroHeading: str("heroHeading"),
       heroSubheading: str("heroSubheading"),
