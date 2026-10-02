@@ -74,7 +74,8 @@ export type DisplayMenuItem = {
   desc: string;
   price: number;
   veg: boolean;
-  image: string;
+  /** Uploaded image URL, or null when the owner has not set one. */
+  imageUrl: string | null;
   comingSoon?: boolean;
   categoryComingSoon?: boolean;
   effectiveComingSoon?: boolean;
@@ -103,11 +104,12 @@ export type DisplayMenuItem = {
   }>;
 };
 
-/** A category enriched with local counts and fallback imagery. */
+/** A category enriched with its live item count. */
 export type DisplayCategory = {
   id: string;
   label: string;
-  image: string;
+  /** Uploaded image URL, or null when the owner has not set one. */
+  imageUrl: string | null;
   dbId: number;
   comingSoon: boolean;
   description: string | null;
