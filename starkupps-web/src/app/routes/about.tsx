@@ -4,7 +4,8 @@ import { MapPin } from "lucide-react";
 import { PageMeta } from "@/app/PageMeta";
 import { Header } from "@/components/layout/Header";
 import { CartSheet } from "@/features/cart/components/CartSheet";
-import { SITE, SITE_LINKS } from "@/config/site";
+import { siteLinks } from "@/config/site";
+import { useSiteSettings } from "@/features/content/useSiteContent";
 import spaceImg from "@/assets/space.jpg";
 import coffeeImg from "@/assets/hero-coffee.jpg";
 
@@ -13,6 +14,9 @@ export const Route = createFileRoute("/about")({
 });
 
 function About() {
+  const { data: site } = useSiteSettings();
+  const links = site ? siteLinks(site) : null;
+
   return (
     <>
       <PageMeta
@@ -47,7 +51,7 @@ function About() {
             everyone in Munger and the nearby areas.
           </p>
           <p className="font-medium text-foreground">
-            {SITE.name} — quality coffee, made clean and served fresh.
+            {site?.brandName ?? "StarKupps"} — quality coffee, made clean and served fresh.
           </p>
         </div>
 
@@ -73,30 +77,41 @@ function About() {
         <div className="mt-10 rounded-3xl border border-border bg-card p-5 shadow-card">
           <h2 className="text-xl">Licences &amp; hygiene</h2>
           <dl className="mt-4 space-y-2 text-sm">
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">FSSAI licence</dt>
-              <dd className="font-medium tabular-nums">{SITE.fssai}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">Kitchen hygiene audit</dt>
-              <dd className="font-medium">Grade A · renewed quarterly</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">Hours</dt>
-              <dd className="font-medium">{SITE.hours}, daily</dd>
-            </div>
+            {site?.fssaiLicense && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">FSSAI licence</dt>
+                <dd className="font-medium tabular-nums">{site.fssaiLicense}</dd>
+              </div>
+            )}
+            {site?.trustClaim3 && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Kitchen hygiene audit</dt>
+                <dd className="font-medium">{site.trustClaim3}</dd>
+              </div>
+            )}
+            {site?.hoursSummary && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Hours</dt>
+                <dd className="font-medium">
+                  {site.hoursSummary}
+                  {site.hoursNote ? `, ${site.hoursNote.toLowerCase()}` : ""}
+                </dd>
+              </div>
+            )}
           </dl>
         </div>
 
-        <a
-          href={SITE_LINKS.directions}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-6 flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-espresso px-5 text-base font-semibold text-espresso-foreground shadow-raised"
-        >
-          <MapPin className="size-5" />
-          Get directions in Google Maps
-        </a>
+        {links?.directions && (
+          <a
+            href={links.directions}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-6 flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-espresso px-5 text-base font-semibold text-espresso-foreground shadow-raised"
+          >
+            <MapPin className="size-5" />
+            Get directions in Google Maps
+          </a>
+        )}
       </main>
 
       <CartSheet />
