@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchReviews, fetchSiteSettings } from "@/api/public";
+import { fetchFaqs, fetchReviews, fetchSiteSettings } from "@/api/public";
 import { subscribeTable } from "@/api/realtime";
 import { queryKeys } from "@/config/query-keys";
 
@@ -57,6 +57,16 @@ export function usePublicReviews() {
     queryKey: queryKeys.reviews,
     queryFn: ({ signal }) => fetchReviews(signal),
     staleTime: 5 * 60_000,
+    retry: 2,
+  });
+}
+
+/** Public, active FAQs from Admin > Content > FAQs. */
+export function usePublicFaqs() {
+  return useQuery({
+    queryKey: queryKeys.faqs,
+    queryFn: ({ signal }) => fetchFaqs(signal),
+    staleTime: 60_000,
     retry: 2,
   });
 }
