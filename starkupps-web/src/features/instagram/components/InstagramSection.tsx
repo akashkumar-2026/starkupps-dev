@@ -3,12 +3,12 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { InstagramCard, InstagramGlyph } from "./InstagramCard";
 import { Pressable } from "@/components/shared/Pressable";
-import { usePublicInstagram } from "@/features/instagram/usePublicInstagram";
+import {
+  usePublicInstagram,
+  usePublicInstagramThumbnails,
+} from "@/features/instagram/usePublicInstagram";
 import { useInstagramMarquee } from "@/features/instagram/useInstagramMarquee";
 import { springs } from "@/utils/motion";
-
-/** Mount iframes only once the section is within this distance of the viewport. */
-const EMBED_PRELOAD_MARGIN_PX = 300;
 
 /**
  * Storefront Instagram section.
@@ -27,17 +27,15 @@ export function InstagramSection() {
 
   const settings = data?.settings ?? null;
   const posts = useMemo(() => data?.posts ?? [], [data?.posts]);
+  const shortcodes = useMemo(() => posts.map((post) => post.shortcode), [posts]);
+  const { data: thumbnails } = usePublicInstagramThumbnails(shortcodes);
 
-  // One gate for the whole section: nothing inside reaches for Instagram until
-  // the row is close to the viewport.
   // Nodes are held in state, not refs: the section renders nothing until the
-  // feed resolves, so on first paint these elements do not exist yet and an
-  // effect keyed on a ref would latch onto a permanently-null node.
+  // feed resolves, so effects need to re-run when the elements attach.
   const [sectionEl, setSectionEl] = useState<HTMLElement | null>(null);
   const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
   const [trackEl, setTrackEl] = useState<HTMLUListElement | null>(null);
 
-  const [embedsAllowed, setEmbedsAllowed] = useState(false);
   const [sectionOnScreen, setSectionOnScreen] = useState(false);
 
   useEffect(() => {
@@ -47,11 +45,8 @@ export function InstagramSection() {
         const entry = entries[0];
         if (!entry) return;
         setSectionOnScreen(entry.isIntersecting);
-        // Latch: once close enough, keep embeds mounted so scrolling does not
-        // remount them.
-        if (entry.isIntersecting) setEmbedsAllowed(true);
       },
-      { rootMargin: `${EMBED_PRELOAD_MARGIN_PX}px 0px` },
+      { rootMargin: "160px 0px" },
     );
     observer.observe(sectionEl);
     return () => observer.disconnect();
@@ -71,11 +66,14 @@ export function InstagramSection() {
   const showRow = Boolean(settings?.enabled && posts.length > 0);
   if (!showRow) return null;
 
-  const heading = settings?.heading?.trim() || "Follow the froth";
-  const eyebrow = settings?.eyebrow?.trim() || "Follow along";
-  const handle = settings?.profileHandle || "starkupps";
-  const profileUrl = settings?.profileUrl || `https://www.instagram.com/${handle}/`;
-  const followLabel = settings?.followButtonLabel?.trim() || "Follow";
+  // Copy comes from `public.instagram_settings` (Admin > Instagram). No client-side
+  // substitutes: the previous code fell back to a hardcoded "starkupps" handle and
+  // built a working profile link from it, so the section followed an account the
+  // owner had never configured.
+  const heading = settings?.heading?.trim() ?? "";
+  const eyebrow = settings?.eyebrow?.trim() ?? "";
+  const profileUrl = settings?.profileUrl ?? null;
+  const followLabel = settings?.followButtonLabel?.trim() ?? "";
 
   // A marquee needs the list twice so the -50% translate never shows a seam.
   // A static strip (reduced motion, or a feed too short to fill the viewport)
@@ -116,17 +114,19 @@ export function InstagramSection() {
       >
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="eyebrow text-primary">{eyebrow}</p>
-            <h2 id="instagram-heading" className="display-lg mt-2 max-w-2xl">
-              {heading}
-            </h2>
+            {eyebrow && <p className="eyebrow text-primary">{eyebrow}</p>}
+            {heading && (
+              <h2 id="instagram-heading" className="display-lg mt-2 max-w-2xl">
+                {heading}
+              </h2>
+            )}
             {settings?.subheading ? (
               <p className="mt-4 max-w-md text-base text-muted-foreground">{settings.subheading}</p>
             ) : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {looping && !reduced ? (
+            {posts.length > 1 ? (
               <div className="hidden items-center gap-1.5 lg:flex">
                 <Pressable
                   onClick={() => marquee.nudge(-1)}
@@ -145,15 +145,18 @@ export function InstagramSection() {
               </div>
             ) : null}
 
-            <a
-              href={profileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-chip transition-opacity hover:opacity-90"
-            >
-              <InstagramGlyph className="size-4" />
-              {followLabel} @{handle}
-            </a>
+            {profileUrl ? (
+              <a
+                href={profileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-chip transition-opacity hover:opacity-90"
+              >
+                <InstagramGlyph className="size-4" />
+                {followLabel}
+                {settings?.profileHandle ? ` @${settings.profileHandle}` : ""}
+              </a>
+            ) : null}
           </div>
         </div>
       </motion.div>
@@ -163,13 +166,13 @@ export function InstagramSection() {
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-80px" }}
         transition={{ ...springs.section, delay: 0.05 }}
-        className="relative mt-8"
+        className="relative mx-auto mt-8 w-full max-w-6xl px-4"
       >
         {/* Fade on both edges. The mask lives on the outer wrapper, never on
             the track, so the gradient stays put while cards move under it. */}
         <div
           ref={setViewportEl}
-          className="instagram-viewport [mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)]"
+          className="instagram-viewport [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)]"
           {...marquee.gestureProps}
         >
           <ul
@@ -180,9 +183,11 @@ export function InstagramSection() {
             {cards.map((item) => (
               <InstagramCard
                 key={item.key}
-                post={item.post}
+                post={{
+                  ...item.post,
+                  thumbnailUrl: thumbnails?.[item.post.shortcode] ?? item.post.thumbnailUrl,
+                }}
                 duplicate={item.duplicate}
-                embedsAllowed={embedsAllowed}
                 onOpen={marquee.openPost}
               />
             ))}
