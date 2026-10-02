@@ -12,6 +12,7 @@ import { StickyCartBar } from "@/features/cart/components/StickyCartBar";
 import { GallerySection } from "@/features/content/components/GallerySection";
 import { LocationSection } from "@/features/content/components/LocationSection";
 import { TrustSection } from "@/features/content/components/TrustSection";
+import { FaqSection } from "@/features/content/components/FaqSection";
 import { useSiteSettings } from "@/features/content/useSiteContent";
 import { InstagramSection } from "@/features/instagram/components/InstagramSection";
 import { CategoryImage } from "@/features/menu/category-images";
@@ -225,6 +226,7 @@ function Home() {
         <TrustSection />
         <GallerySection />
         <InstagramSection />
+        <FaqSection />
         <LocationSection />
 
         <SiteFooter />
