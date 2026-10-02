@@ -180,6 +180,13 @@ export function useInstagramMarquee({
   const leaveManual = useCallback(() => {
     if (!viewportEl || !trackEl) return;
 
+    // A short or reduced-motion feed is a native scroll strip, not an animated
+    // marquee. Preserve the visitor's scroll position when the pause expires.
+    if (!looping || disabled) {
+      setManual(false);
+      return;
+    }
+
     const travelled = viewportEl.scrollLeft;
     viewportEl.scrollLeft = 0;
 
@@ -197,7 +204,7 @@ export function useInstagramMarquee({
     }
 
     setManual(false);
-  }, [durationSeconds, trackEl, viewportEl]);
+  }, [disabled, durationSeconds, looping, trackEl, viewportEl]);
 
   const scheduleResume = useCallback(() => {
     clearResume();
