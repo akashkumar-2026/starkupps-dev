@@ -29,8 +29,8 @@ export default defineConfig({
   },
   server: {
     host: true,
-    port: Number(process.env["VITE_PORT"] ?? process.env["PORT"] ?? 5173),
-    strictPort: false,
+    port: Number(process.env["VITE_PORT"] ?? 5174),
+    strictPort: true,
     // Lets the app call `/api/public/*` same-origin in dev, avoiding CORS
     // and keeping cookie-based sessions working.
     proxy: {
