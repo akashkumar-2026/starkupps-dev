@@ -80,22 +80,60 @@ export function subscribeTable(
 }
 
 /**
- * Multiplexed menu subscription: one channel, every table that can change the
- * menu, and a debounced callback so a bulk edit in Admin triggers a single
- * refetch rather than one per row.
+ * A menu change as delivered by Supabase Realtime.
+ *
+ * `table` and `row` are passed through so the caller can patch its cache instead
+ * of refetching the whole eight-table menu payload on every keystroke-sized
+ * edit.
  */
-export function subscribeMenu(outletId: number | null, onChange: () => void): (() => void) | null {
+export type MenuChange = {
+  table: (typeof MENU_TABLES)[number];
+  eventType: "INSERT" | "UPDATE" | "DELETE";
+  new: Record<string, unknown>;
+  old: Record<string, unknown>;
+};
+
+/**
+ * Multiplexed menu subscription: one channel, every table that can change the
+ * menu, and a debounced callback so a bulk edit in Admin produces one coalesced
+ * signal rather than one per row.
+ */
+export function subscribeMenu(
+  outletId: number | null,
+  onChange: (change: MenuChange) => void,
+): (() => void) | null {
   try {
     const supabase = safeClient();
     if (!supabase) return null;
 
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const coalesced = () => {
+    // Pending changes, merged so a burst of edits arrives as a single signal with
+    // the most recent row for each table.
+    let pending: MenuChange | null = null;
+
+    const flush = () => {
+      timer = null;
+      const change = pending;
+      pending = null;
+      if (change) onChange(change);
+    };
+
+    const coalesced = (table: MenuChange["table"]) => (payload: unknown) => {
+      const p = payload as {
+        eventType?: string;
+        new?: Record<string, unknown>;
+        old?: Record<string, unknown>;
+      };
+      const eventType = p?.eventType;
+      if (eventType !== "INSERT" && eventType !== "UPDATE" && eventType !== "DELETE") return;
+      pending = {
+        table,
+        eventType,
+        new: p?.new ?? {},
+        old: p?.old ?? {},
+      };
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        onChange();
-      }, COALESCE_MS);
+      timer = setTimeout(flush, COALESCE_MS);
     };
 
     const channel = supabase.channel(`realtime:menu:${++channelSeq}`);
@@ -105,13 +143,21 @@ export function subscribeMenu(outletId: number | null, onChange: () => void): ((
       const filter =
         table.startsWith("outlet_") && outletId ? `outletId=eq.${outletId}` : undefined;
       const change: PostgresChangeFilter = { event: "*", schema: "public", table, filter };
-      channel.on("postgres_changes" as never, change as never, coalesced);
+      channel.on("postgres_changes" as never, change as never, coalesced(table));
     }
 
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         // A reconnect may have missed changes, so re-check on every subscribe.
-        coalesced();
+        // An empty payload forces the caller's refetch path.
+        pending = {
+          table: "menu_categories",
+          eventType: "UPDATE",
+          new: {},
+          old: {},
+        };
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(flush, 0);
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         // CLOSED is expected on unmount and is not worth logging.
         console.warn(`[realtime] menu channel ${status} (outletId=${outletId})`);
