@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { marqueeDurationSeconds, SCROLL_SECONDS_PER_ITEM, instagramEmbedUrl } from "./helpers";
+import { instagramEmbedUrl, marqueeDurationSeconds, SCROLL_SECONDS_PER_ITEM } from "./helpers";
 
 describe("instagramEmbedUrl", () => {
   it("uses the /p/ segment for posts", () => {
