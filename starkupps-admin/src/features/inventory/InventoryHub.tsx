@@ -1,4 +1,4 @@
-import { dateText, inr } from "@/utils/format";
+import { dateText, inr, inrOrUnavailable } from "@/utils/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -464,7 +464,7 @@ function InventoryOverview({
         />
         <Metric
           label="Wastage This Month"
-          value={inr(o.wastageThisMonth)}
+          value={inrOrUnavailable(o.wastageThisMonth, "Not available")}
           detail={`${o.expiringSoon} expiring soon`}
           tone="red"
         />
@@ -4100,6 +4100,37 @@ function ReceiveDialog({
       }
     >
   >({});
+  // This used to be `if (!detail.data) return <spinner/>` with no error branch,
+  // so a failed `purchaseOrders.byId` — or an open dialog with no orderId —
+  // produced a spinner that never resolved and no way out. Each distinct cause
+  // now gets its own honest state.
+  if (detail.isError)
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="bg-[#FCFAF6]">
+          <DialogHeader>
+            <DialogTitle>Couldn&apos;t load the purchase order</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#776A5E]">{errorText(detail.error)}</p>
+          <Button variant="outline" onClick={() => detail.refetch()}>
+            Try again
+          </Button>
+        </DialogContent>
+      </Dialog>
+    );
+  if (!orderId)
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="bg-[#FCFAF6]">
+          <DialogHeader>
+            <DialogTitle>No purchase order selected</DialogTitle>
+            <DialogDescription>
+              Close this dialog and pick an order to receive against.
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    );
   if (!detail.data)
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
