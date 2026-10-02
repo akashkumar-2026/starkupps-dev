@@ -77,6 +77,7 @@ export const financeRouter = router({
         `
         SELECT
           COALESCE(sum(CASE WHEN "paymentStatus" = 'paid' THEN "total" ELSE 0 END), 0) AS "gross",
+          COALESCE(sum(CASE WHEN "paymentStatus" = 'paid' THEN "couponDiscount" ELSE 0 END), 0) AS "discounts",
           count(*)::int AS "totalOrders",
           count(*) FILTER (WHERE "paymentStatus" = 'paid')::int AS "paidOrders"
         FROM "orders" ${where}
@@ -86,7 +87,10 @@ export const financeRouter = router({
       const gross = Number(summary[0]?.gross ?? 0);
       const totalOrders = Number(summary[0]?.totalOrders ?? 0);
       const paidOrders = Number(summary[0]?.paidOrders ?? 0);
-      const discounts = 0;
+      // Was hardcoded to 0 while being rendered as a real "Discounts" KPI next to
+      // live Gross/Net figures. `orders.couponDiscount` is the actual money given
+      // away on paid orders in the same window and filter as gross.
+      const discounts = Number(summary[0]?.discounts ?? 0);
 
       const dailyRows = (await sql.unsafe(
         `
