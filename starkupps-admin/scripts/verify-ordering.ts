@@ -639,6 +639,97 @@ async function main() {
     delivery: true,
     onlineOrdering: true,
   });
+
+  // ── 11. New-order alert count ────────────────────────────────────────────
+  section("11. Pending-order count that drives the ringtone");
+  // `adminRouter` is imported lazily: it pulls in `routers/index` → `argon2`.
+  const { createCallerFactory: adminCallerFactory } =
+    await import("../server/lib/trpc");
+  const { adminRouter } = await import("../server/routers/adminRouter");
+  // `resolveStaffRole` maps a user whose `role` is `admin` straight to `owner`,
+  // so this exercises the real permission path without minting a session.
+  const [owner] =
+    await sql`SELECT id FROM public.users WHERE role = 'admin' LIMIT 1`;
+  const admin = adminCallerFactory(adminRouter)({
+    user: {
+      id: owner.id as number,
+      name: "verify",
+      email: "verify@example.com",
+      role: "admin",
+    } as any,
+    aud: "admin" as any,
+    req: { headers: {}, protocol: "http" } as any,
+    res: {} as any,
+  });
+  const adminOrders = admin.orders as any;
+
+  const allOutlets = await adminOrders.pending({ outletId: undefined });
+  check(
+    "pending returns a numeric count",
+    typeof allOutlets.count === "number",
+    allOutlets
+  );
+  const [direct] =
+    await sql`SELECT count(*)::int AS n FROM public.orders WHERE status = 'new'`;
+  check(
+    "pending agrees with a direct count of status='new'",
+    allOutlets.count === Number(direct?.n),
+    { api: allOutlets.count, sql: direct?.n }
+  );
+  check(
+    "newest carries an order number so the banner can link to it",
+    allOutlets.newest.every(
+      (o: any) => typeof o.orderNumber === "number" && typeof o.id === "number"
+    ),
+    allOutlets.newest
+  );
+
+  // The transition the ringtone depends on: a non-zero count while an order is
+  // untouched, and nothing counted once it has been actioned.
+  await sql`UPDATE public.orders SET status = 'new' WHERE id = ${order.id}`;
+  const whileNew = await adminOrders.pending({ outletId: undefined });
+  check(
+    "an order set back to 'new' is counted again",
+    whileNew.count >= 1,
+    whileNew
+  );
+  check(
+    "the waiting ticket is included",
+    whileNew.newest.some((o: any) => o.id === order.id),
+    whileNew.newest
+  );
+
+  await sql`UPDATE public.orders SET status = 'preparing' WHERE id = ${order.id}`;
+  const afterAction = await adminOrders.pending({ outletId: undefined });
+  check(
+    "acting on it drops it from the count, which stops the ringtone",
+    !afterAction.newest.some((o: any) => o.id === order.id),
+    afterAction
+  );
+
+  // Scoping: filtering the header to another outlet must not ring for this one.
+  const [otherOutlet] = await sql`
+    SELECT id FROM public.outlets WHERE id <> ${outletId} AND status = 'active' LIMIT 1
+  `;
+  if (otherOutlet) {
+    await sql`UPDATE public.orders SET status = 'new' WHERE id = ${order.id}`;
+    const other = await adminOrders.pending({
+      outletId: otherOutlet.id as number,
+    });
+    check(
+      "filtering to another outlet excludes this outlet's new orders",
+      !other.newest.some((o: any) => o.id === order.id),
+      other
+    );
+    const own = await adminOrders.pending({ outletId: outletId as number });
+    check(
+      "filtering to the owning outlet includes it",
+      own.newest.some((o: any) => o.id === order.id),
+      own
+    );
+  }
+
+  await sql`UPDATE public.orders SET status = 'preparing' WHERE id = ${order.id}`;
 }
 
 async function cleanup() {
