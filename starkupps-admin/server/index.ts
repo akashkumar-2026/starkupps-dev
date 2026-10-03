@@ -750,6 +750,26 @@ async function startServer() {
       sendTrpcError(res, e);
     }
   });
+  // Reverse geocode for the cart's "use my current location" button.
+  // POST rather than GET: the coordinates are the customer's precise position,
+  // and putting them in a URL would write them into access logs and any
+  // intermediate proxy's log too. Same reasoning as orders/track-token.
+  app.post("/api/public/geocode", async (req, res) => {
+    try {
+      const { createCallerFactory } = await import("./lib/trpc");
+      const { publicRouter } = await import("./routers/publicRouter");
+      const caller = createCallerFactory(publicRouter)({
+        user: null,
+        aud: null,
+        req: req as any,
+        res: res as any,
+      });
+      const data = await (caller as any).geocode(req.body);
+      res.json(data);
+    } catch (e: any) {
+      sendTrpcError(res, e);
+    }
+  });
   // Storefront business facts (contact, hours, hero, stats, trust, gallery).
   // Cacheable at the edge: it changes only when an owner edits it in the panel.
   // The SSE relay is not involved — the storefront subscribes to
