@@ -54,6 +54,24 @@ export type CreatedOrder = {
   already?: boolean;
 };
 
+/**
+ * An address suggestion derived from device coordinates.
+ *
+ * Always a draft. `attribution` is required by the OpenStreetMap licence the
+ * underlying data comes from, so it is carried through to the caller rather
+ * than dropped here.
+ */
+export type ReverseGeocodeResult = {
+  address: string;
+  locality: string | null;
+  city: string | null;
+  state: string | null;
+  postcode: string | null;
+  country: string | null;
+  attribution: string;
+  cached: boolean;
+};
+
 export type CouponValidationInput = {
   code: string;
   outletId?: number | null;
