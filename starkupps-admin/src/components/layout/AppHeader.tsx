@@ -38,6 +38,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useOutlet } from "@/state/outlet-provider";
 import { RealtimeIndicator } from "@/components/layout/RealtimeIndicator";
+import { OrderAlertIndicator } from "@/features/orders/OrderAlertBanner";
 
 type AppHeaderProps = {
   currentView: View;
@@ -92,6 +93,9 @@ export function AppHeader({ currentView, activeShiftName }: AppHeaderProps) {
         <RealtimeIndicator className="ml-auto" />
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Before the outlet selector: the alert is the reason to look at this
+              panel, and it must be visible without scrolling on narrow screens. */}
+          <OrderAlertIndicator />
           <OutletSelector />
           <Button
             variant="outline"
