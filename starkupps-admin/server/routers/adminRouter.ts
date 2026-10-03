@@ -667,6 +667,96 @@ export const adminRouter = router({
     }),
 
   orders: router({
+    /**
+     * How many orders are still untouched (`status = 'new'`).
+     *
+     * Exists because the client cannot derive this from `orders.list`. That
+     * procedure is filtered by whatever tab the admin has open and paginated at
+     * 24 rows, so `items.length` is "how many are on this page of this filter",
+     * not "how many are waiting". Driving the order ringtone off `list` would
+     * therefore fall silent whenever the admin sat on another tab, or when more
+     * than one page of orders existed.
+     *
+     * Deliberately a COUNT plus the newest few ids rather than the full set: this
+     * is polled on every stream event and read on every reconnect, so it must not
+     * grow with the backlog. `newest` gives the header enough to say *which*
+     * ticket is waiting and to jump straight to it.
+     */
+    pending: protectedProcedure
+      .input(
+        z
+          .object({
+            shiftId: z.number().int().positive().optional(),
+            outletId: z.number().int().positive().optional(),
+          })
+          .nullish()
+      )
+      .query(async ({ ctx, input }) => {
+        await requirePermission(ctx.user, "orders.read");
+        const { getOutletScope, assertOutletAccess } =
+          await import("../db/index");
+        const scope = await getOutletScope(ctx.user);
+        // A staff member with no outlet assigned can see nothing, so there is
+        // nothing to ring about. Fail closed rather than counting globally.
+        if (scope !== null && scope.length === 0)
+          return { count: 0, newest: [] };
+        if (input?.outletId) await assertOutletAccess(ctx.user, input.outletId);
+
+        try {
+          const sql = await getSql();
+          const params: unknown[] = [];
+          const conditions: string[] = [`o."status" = 'new'`];
+          if (input?.shiftId) {
+            conditions.push(`o."shiftId" = $${params.length + 1}`);
+            params.push(input.shiftId);
+          }
+          if (input?.outletId) {
+            conditions.push(`o."outletId" = $${params.length + 1}`);
+            params.push(input.outletId);
+          } else if (scope !== null) {
+            if (scope.length === 1) {
+              conditions.push(`o."outletId" = $${params.length + 1}`);
+              params.push(scope[0]);
+            } else {
+              conditions.push(`o."outletId" = ANY($${params.length + 1})`);
+              params.push(scope);
+            }
+          }
+          const rows = await sql.unsafe(
+            `SELECT o."id", o."orderNumber"
+               FROM "orders" o
+              WHERE ${conditions.join(" AND ")}
+              ORDER BY o."id" DESC
+              LIMIT 5`,
+            params
+          );
+          // One extra COUNT only when there are more than the five we returned;
+          // for the common backlog of 0-5 this is a single cheap query.
+          const countRows =
+            rows.length < 5
+              ? [{ n: rows.length }]
+              : await sql.unsafe(
+                  `SELECT count(*)::int AS n FROM "orders" o WHERE ${conditions.join(" AND ")}`,
+                  params
+                );
+          return {
+            count: Number(countRows[0]?.n ?? 0),
+            newest: rows.map((row: any) => ({
+              id: Number(row.id),
+              orderNumber: Number(row.orderNumber),
+            })),
+          };
+        } catch {
+          // A failed count must not leave the ringtone stuck on, and must not
+          // fake a zero either. `unknown` makes the caller keep its last known
+          // state rather than flip on a transient database blip.
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Could not read the pending order count.",
+          });
+        }
+      }),
+
     list: protectedProcedure
       .input(
         paginationSchema.extend({
