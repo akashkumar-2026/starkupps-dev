@@ -47,6 +47,71 @@ export type RequestOptions = {
 const DEFAULT_TIMEOUT_MS = 8_000;
 const POST_TIMEOUT_MS = 12_000;
 
+/** Methods that cannot change server state, and so need no CSRF token. */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Cookie name of the gateway's double-submit CSRF token.
+ *
+ * Mirrors `server/auth/cookies.ts` and the Admin panel's `src/api/client.ts`.
+ * The optional `__Host-` prefix is included because that is the name used
+ * whenever `SECURE_COOKIES` is on, i.e. in production.
+ */
+const CSRF_COOKIE = /(?:^|;\s*)(?:__Host-)?app_session_id_csrf=([^;]*)/;
+
+/**
+ * Reads the double-submit CSRF token from the JS-readable cookie.
+ *
+ * ## Why the storefront needs this at all
+ *
+ * The gateway's CSRF guard triggers on the *presence* of an `app_session_id`
+ * cookie, not on whether the request is an authenticated one:
+ *
+ * ```ts
+ * const hasSession = req.headers.cookie && /app_session_id|pos_session_id/.test(...)
+ * if (!hasSession) return next();          // public/guest traffic is exempt
+ * ```
+ *
+ * Those cookies are set by the Admin panel login, and cookies ignore ports. So
+ * a browser with the Admin panel signed in on `localhost:5175` also carries
+ * `app_session_id` when it loads the storefront on `localhost:5174` — which put
+ * every guest checkout into the CSRF branch and rejected it with
+ * `403 CSRF check failed`, even though no admin session was involved. The token
+ * is not readable cross-origin in production (the storefront is on Vercel, the
+ * gateway on Cloud Run), so this only bites in local development.
+ *
+ * Echoing the token is what makes the guard pass, and it is safe by
+ * construction: the cookie is deliberately not `httpOnly` so this client can
+ * read it, and a cross-site attacker can make a browser *send* the cookie but
+ * cannot read it to set the header — so a forged request still has no header and
+ * is still rejected.
+ */
+export function readCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(CSRF_COOKIE);
+  // An empty capture still counts as "no token": a blank header would fail the
+  // gateway's comparison just as surely as a missing one.
+  const value = match?.[1];
+  return value ? decodeURIComponent(value) : null;
+}
+
+/**
+ * Adds the CSRF header when the request can change state.
+ *
+ * Exported because `src/api/public.ts` has a tRPC fallback path that calls
+ * `fetch` directly and would otherwise bypass this.
+ */
+export function withCsrfHeader(
+  method: string | undefined,
+  existing: Record<string, string>,
+): Record<string, string> {
+  const verb = String(method ?? "GET").toUpperCase();
+  if (SAFE_METHODS.has(verb)) return existing;
+  const token = readCsrfToken();
+  if (!token) return existing;
+  return { ...existing, "x-csrf-token": token };
+}
+
 /** Message and machine-readable code extracted from a gateway JSON body. */
 type ErrorBody = { message: string; domainCode?: string | undefined };
 
@@ -91,9 +156,12 @@ export async function apiRequest<T>(
   signal?.addEventListener("abort", onAbort);
 
   try {
-    const headers: Record<string, string> = {};
+    let headers: Record<string, string> = {};
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (noCache) headers["Cache-Control"] = "no-cache";
+    // Applied last so it can never be dropped by an earlier assignment, and
+    // before the fetch so every state-changing call carries it.
+    headers = withCsrfHeader(method, headers);
 
     const response = await fetch(url, {
       method,
