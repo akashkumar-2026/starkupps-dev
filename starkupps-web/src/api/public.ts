@@ -7,7 +7,7 @@
  */
 import superjson from "superjson";
 
-import { apiGet, apiGetCached, apiPost, ApiError } from "./client";
+import { apiGet, apiGetCached, apiPost, ApiError, withCsrfHeader } from "./client";
 import { publicApiBase, trpcApiBase } from "@/config/env";
 import type {
   CouponValidation,
@@ -22,7 +22,7 @@ import type {
   PublicReview,
   PublicSiteSettings,
 } from "@/types";
-import type { ChargeQuote, ApiOrderType } from "@/types/orders";
+import type { ChargeQuote, ApiOrderType, ReverseGeocodeResult } from "@/types/orders";
 import type { OrderDomainCode } from "@/config/order-error-codes";
 import { TrpcError } from "@/utils/trpc-error";
 
@@ -113,7 +113,10 @@ async function trpcQuery<T>(procedure: string, input?: unknown, signal?: AbortSi
 async function trpcPost<T>(procedure: string, input: unknown): Promise<T> {
   const response = await fetch(`${trpcApiBase}/${procedure}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // `withCsrfHeader` rather than a literal, for the same reason `apiRequest`
+    // uses it: the tRPC fallback is a state-changing call and hits the same
+    // gateway CSRF guard. See `readCsrfToken` for the full explanation.
+    headers: withCsrfHeader("POST", { "Content-Type": "application/json" }),
     credentials: "include",
     body: JSON.stringify(superjson.serialize(input)),
   });
@@ -213,6 +216,26 @@ export function fetchCharges(
     type,
     taxable,
   });
+}
+
+/**
+ * Turns device coordinates into a delivery-address suggestion.
+ *
+ * POST, never a query string — these are the customer's precise position and
+ * must stay out of access logs and any intermediate proxy's log.
+ *
+ * The result is a *suggestion*. Reverse geocoding is routinely wrong at house
+ * and lane level, so the caller must leave the field editable rather than treat
+ * this as authoritative.
+ */
+export function reverseGeocodeAddress(input: {
+  lat: number;
+  lon: number;
+}): Promise<ReverseGeocodeResult> {
+  return withFallback(
+    () => apiPost<ReverseGeocodeResult>(`${publicApiBase}/geocode`, input),
+    () => trpcPost<ReverseGeocodeResult>("public.geocode", input),
+  );
 }
 
 /** Exchange an order id + phone for a short-lived SSE tracking token. */
