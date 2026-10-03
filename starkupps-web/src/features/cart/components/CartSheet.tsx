@@ -2,7 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ArrowLeft, Minus, Plus, ShoppingBag, X, Tag, UserRound, MapPin } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  LocateFixed,
+  Minus,
+  Plus,
+  ShoppingBag,
+  X,
+  Tag,
+  UserRound,
+  MapPin,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Pressable } from "@/components/shared/Pressable";
@@ -16,11 +27,18 @@ import { projectEndpoint, springs } from "@/utils/motion";
 import { cn } from "@/utils/cn";
 import { errorMessage } from "@/utils/errors";
 import { classifyOrderError, orderErrorDetail } from "@/utils/order-errors";
+import { reverseGeocodeAddress } from "@/api/public";
 import {
   availableOrderTypes,
   hasReachableOrderType,
   parseOutletServices,
 } from "@/utils/outlet-services";
+import {
+  initialLocateState,
+  locate,
+  locateFailureMessage,
+  type LocationFailure,
+} from "@/features/checkout/locate";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -96,6 +114,8 @@ export function CartSheet() {
   const [addrPick, setAddrPick] = useState<string | null>(null);
 
   const [checkout, setCheckout] = useState(false);
+  const [locateState, setLocateState] = useState(initialLocateState);
+  const [geocodeNote, setGeocodeNote] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponValid, setCouponValid] = useState<boolean | null>(null);
@@ -201,6 +221,88 @@ export function CartSheet() {
     mode: "onBlur",
     reValidateMode: "onChange",
   });
+
+  const locating = locateState.status === "locating";
+  const locateError: LocationFailure | null =
+    locateState.status === "error" ? locateState.reason : null;
+
+  /**
+   * Fill the delivery address from the device's position.
+   *
+   * Three rules, in order of importance:
+   *
+   * 1. **Never destroy what is already there on failure.** Every error path
+   *    returns before `setValue`, so a customer who typed a partial address and
+   *    then hit a denied permission keeps it.
+   * 2. **A failure explains itself.** `locateError` renders the reason inline;
+   *    no toast, because a toast disappears before it has been read and this is
+   *    the message that tells the customer they can carry on typing.
+   * 3. **The result is a draft.** `shouldDirty`/`shouldValidate` are set so the
+   *    field is marked touched and immediately re-checked against the same schema
+   *    as typing — a geocoded line that fails validation (too short, single
+   *    word) shows the real error rather than silently failing on submit.
+   *
+   * The address is also re-filled even if the customer already had one: an
+   * explicit "use my location" click means they want this, and the confirm note
+   * tells them to check it.
+   */
+  const useCurrentLocation = async () => {
+    setGeocodeNote(null);
+    setLocateState({ ...initialLocateState, status: "locating" });
+    try {
+      const position = await locate();
+      if (!position.ok) {
+        setLocateState({
+          status: "error",
+          coords: null,
+          reason: position.reason,
+        });
+        return;
+      }
+      setLocateState({
+        status: "located",
+        coords: { lat: position.lat, lon: position.lon },
+        reason: null,
+      });
+      try {
+        const result = await reverseGeocodeAddress({
+          lat: position.lat,
+          lon: position.lon,
+        });
+        form.setValue("address", result.address, {
+          shouldDirty: true,
+          shouldValidate: true,
+          shouldTouch: true,
+        });
+        // Manual edits supersede the suggestion, so clear the confirm note.
+        setAddrPick(null);
+        setGeocodeNote(result.attribution);
+      } catch {
+        // The position worked but the lookup did not. Say so plainly rather than
+        // showing an empty field with no explanation.
+        setLocateState({
+          status: "error",
+          coords: { lat: position.lat, lon: position.lon },
+          reason: "unavailable",
+        });
+      }
+    } catch {
+      setLocateState({
+        status: "error",
+        coords: null,
+        reason: "unavailable",
+      });
+    }
+  };
+
+  // Switching away from delivery must not leave a location prompt or note behind
+  // for a method that has no address. `handleOrderTypeSwitch` already clears the
+  // address value; this clears the messaging around it.
+  useEffect(() => {
+    if (orderType === "delivery") return;
+    setLocateState(initialLocateState);
+    setGeocodeNote(null);
+  }, [orderType]);
 
   // Keep form's discriminated field in sync with cart's orderType.
   //
@@ -658,11 +760,22 @@ export function CartSheet() {
                 <div className="max-h-[52svh] overflow-y-auto px-5 sm:max-h-[calc(100svh-19rem)]">
                   {/* Outlet selector — minimal, design-preserving */}
                   <div className="mb-4">
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                      Outlet
-                    </label>
+                    {/*
+                      A single-option dropdown is a control that cannot be used:
+                      it implies a choice that does not exist, and on a café with
+                      one location it is pure chrome above the actual cart. So with
+                      exactly one published outlet this shows the same read-only
+                      row the details step already uses — the customer still sees
+                      where they are ordering from, and the layout is identical
+                      between the two steps.
+                    */}
                     {outletLoading ? (
-                      <div className="h-11 animate-pulse rounded-xl bg-muted" />
+                      <>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                          Outlet
+                        </label>
+                        <div className="h-11 animate-pulse rounded-xl bg-muted" />
+                      </>
                     ) : outletError ? (
                       // A failed outlet lookup is not the same as "no outlets".
                       // It used to render "No outlets available. Orders will be
@@ -675,18 +788,28 @@ export function CartSheet() {
                       <p className="text-xs text-muted-foreground">
                         No outlets are published yet, so ordering is unavailable.
                       </p>
+                    ) : outlets.length === 1 ? (
+                      <div className="flex items-center justify-between rounded-xl border border-border bg-secondary px-3 py-2 text-xs">
+                        <span className="text-muted-foreground">Outlet</span>
+                        <span className="truncate font-semibold">{outlets[0]!.name}</span>
+                      </div>
                     ) : (
-                      <select
-                        value={outletId ?? ""}
-                        onChange={(e) => handleOutletChange(e.target.value)}
-                        className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm"
-                      >
-                        {outlets.map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.name} {o.city ? `— ${o.city}` : ""}
-                          </option>
-                        ))}
-                      </select>
+                      <>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                          Outlet
+                        </label>
+                        <select
+                          value={outletId ?? ""}
+                          onChange={(e) => handleOutletChange(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm"
+                        >
+                          {outlets.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name} {o.city ? `— ${o.city}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </>
                     )}
                   </div>
 
@@ -1270,6 +1393,49 @@ export function CartSheet() {
                                     }}
                                   />
                                 </FormControl>
+
+                                {/* ── Use my location ──
+                                    Offered on delivery only. Fills the field with
+                                    a suggestion and leaves it fully editable:
+                                    reverse geocoding is wrong at house and lane
+                                    level often enough that treating the result as
+                                    final would send drivers to the wrong place. */}
+                                <div className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={useCurrentLocation}
+                                    disabled={locating}
+                                    className={cn(
+                                      "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors",
+                                      locating
+                                        ? "border-border text-muted-foreground"
+                                        : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10",
+                                    )}
+                                  >
+                                    {locating ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : (
+                                      <LocateFixed className="size-3.5" />
+                                    )}
+                                    {locating ? "Finding you…" : "Use my current location"}
+                                  </button>
+
+                                  {locateError ? (
+                                    <p role="alert" className="mt-2 text-xs text-muted-foreground">
+                                      {locateFailureMessage(locateError)}
+                                    </p>
+                                  ) : null}
+
+                                  {geocodeNote ? (
+                                    <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+                                      <MapPin className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                                      <span>
+                                        Filled from your location — check it and add your house
+                                        number. <span className="opacity-70">{geocodeNote}</span>
+                                      </span>
+                                    </p>
+                                  ) : null}
+                                </div>
                                 <FormMessage />
                               </FormItem>
                             )}
