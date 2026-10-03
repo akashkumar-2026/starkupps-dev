@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyPanel, PageLoading } from "@/components/shared/StatePanels";
 import { ShiftScopeProvider, type ShiftScope } from "@/state/shift-scope";
 import { OutletProvider } from "@/state/outlet-provider";
+import { OrderAlertProvider } from "@/state/order-alert-provider";
+import { OrderAlertBanner } from "@/features/orders/OrderAlertBanner";
 import { useAuth } from "@/state";
 import type { StaffRole, View } from "@/types";
 import { roleCapabilities } from "@/config/navigation";
@@ -207,26 +209,36 @@ export default function AdminWorkspace({
   return (
     <AccessBoundary view={view}>
       <OutletProvider>
-        <Suspense fallback={<PageLoading />}>
-          {view === "overview" && <OverviewPage />}
-          {view === "orders" && <OrdersPage detailId={detailId} />}
-          {view === "menu" && <MenuPage />}
-          {view === "inventory" && <InventoryHub detailId={detailId} />}
-          {view === "loyalty" && <LoyaltyPage detailId={detailId} />}
-          {view === "analytics" && <AnalyticsPage />}
-          {view === "staff" && <StaffHub staffId={detailId} />}
-          {view === "settings" && <SettingsPage />}
-          {view === "outlets" && <OutletsHub detailId={detailId} />}
-          {view === "customers" && <CustomersHub detailId={detailId} />}
-          {view === "delivery" && <DeliveryHub />}
-          {view === "coupons" && <CouponsHub detailId={detailId} />}
-          {view === "marketing" && <MarketingHub />}
-          {view === "instagram" && <InstagramHub />}
-          {view === "finance" && <FinanceHub />}
-          {view === "content" && <ContentHub />}
-          {view === "support" && <SupportHub detailId={detailId} />}
-          {view === "audit-logs" && <AuditHub />}
-        </Suspense>
+        {/*
+          Mounted above every view, not on the Orders page: an order must be
+          audible regardless of which screen the operator happens to be on.
+          Inside OutletProvider because the alert honours the header's outlet
+          selector, and inside AccessBoundary so it never runs for a session
+          with no resolved staff role.
+        */}
+        <OrderAlertProvider>
+          <OrderAlertBanner />
+          <Suspense fallback={<PageLoading />}>
+            {view === "overview" && <OverviewPage />}
+            {view === "orders" && <OrdersPage detailId={detailId} />}
+            {view === "menu" && <MenuPage />}
+            {view === "inventory" && <InventoryHub detailId={detailId} />}
+            {view === "loyalty" && <LoyaltyPage detailId={detailId} />}
+            {view === "analytics" && <AnalyticsPage />}
+            {view === "staff" && <StaffHub staffId={detailId} />}
+            {view === "settings" && <SettingsPage />}
+            {view === "outlets" && <OutletsHub detailId={detailId} />}
+            {view === "customers" && <CustomersHub />}
+            {view === "delivery" && <DeliveryHub />}
+            {view === "coupons" && <CouponsHub />}
+            {view === "marketing" && <MarketingHub />}
+            {view === "instagram" && <InstagramHub />}
+            {view === "finance" && <FinanceHub />}
+            {view === "content" && <ContentHub />}
+            {view === "support" && <SupportHub detailId={detailId} />}
+            {view === "audit-logs" && <AuditHub />}
+          </Suspense>
+        </OrderAlertProvider>
       </OutletProvider>
     </AccessBoundary>
   );
