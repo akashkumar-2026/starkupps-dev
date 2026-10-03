@@ -28,6 +28,7 @@
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
     "db:seed": "tsx scripts/seed-admin.pg.ts",
     "db:migrate": "tsx scripts/apply-migration.ts",
+    "verify:ordering": "tsx --import ./scripts/argon2-stub.mjs scripts/verify-ordering.ts",
     "auth:unlock": "tsx scripts/unlock-admin.ts",
     "supabase:types": "supabase gen types typescript --linked > shared/supabase.types.ts",
     "supabase:push": "supabase db push --linked",

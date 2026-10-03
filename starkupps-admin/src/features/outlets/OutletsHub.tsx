@@ -39,7 +39,13 @@ import { nanoid } from "nanoid";
 import { IndiaStateCitySelect } from "@/components/shared/IndiaStateCitySelect";
 import { LocationPicker } from "@/components/shared/LocationPicker";
 import { OutletDeleteDialog } from "./OutletDeleteDialog";
+import { OutletFulfillmentPanel } from "./OutletFulfillmentPanel";
 import { useAuth } from "@/state/auth-provider";
+import {
+  FULFILLMENT_SERVICE_COPY,
+  OUTLET_ORDER_TYPE_KEYS,
+  parseOutletServices,
+} from "@shared/outletServices";
 
 const days = [
   "Sunday",
@@ -792,6 +798,7 @@ function OutletDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const { hasPermission } = useAuth();
   const canDelete = hasPermission("outlets.delete");
+  const canUpdate = hasPermission("outlets.update");
   const [tab, setTab] = useState<
     | "overview"
     | "details"
@@ -1017,11 +1024,20 @@ function OutletDetail({ id, onBack }: { id: number; onBack: () => void }) {
           </div>
         )}
         {tab === "settings" && (
-          <div className="rounded-[14px] border border-[#D6CABD] bg-[#FCFAF6] p-8 text-center">
-            <p className="text-sm font-bold">Settings</p>
-            <p className="mt-2 text-xs text-[#776A5E]">
-              Outlet-specific settings, timezone and operational flags.
-            </p>
+          <div className="space-y-4">
+            <OutletFulfillmentPanel
+              outletId={id}
+              services={outlet.services}
+              canEdit={canUpdate}
+            />
+            <div className="rounded-[14px] border border-[#D6CABD] bg-[#FCFAF6] p-5">
+              <p className="text-sm font-bold">Other settings</p>
+              <p className="mt-2 text-xs text-[#776A5E]">
+                Outlet timezone, operating hours and operational flags are
+                edited in the tabs above. Hours, delivery zones, menu
+                availability and staff each have their own tab.
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -1038,6 +1054,9 @@ function OutletDetail({ id, onBack }: { id: number; onBack: () => void }) {
 }
 
 function OutletOverview({ outlet, stats, owner, assignedStaff }: any) {
+  // Normalised so a legacy double-encoded row (see shared/outletServices.ts)
+  // renders real names instead of the indices of a string's characters.
+  const services = parseOutletServices(outlet.services);
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="rounded-[14px] border border-[#D6CABD] bg-[#FCFAF6] p-5">
@@ -1071,21 +1090,31 @@ function OutletOverview({ outlet, stats, owner, assignedStaff }: any) {
           <dd className="font-bold">{assignedStaff?.length ?? 0} assigned</dd>
         </dl>
       </div>
+      {/* Read-only summary; the switches live in the Settings tab. Named
+          labels rather than the raw `services` keys, because `Object.entries`
+          also rendered the internal `pos` / `onlineOrdering` flags and any
+          per-outlet charge overrides as if they were order types. */}
       <div className="rounded-[14px] border border-[#D6CABD] bg-[#FCFAF6] p-5">
         <h3 className="text-sm font-extrabold">Services</h3>
         <div className="mt-3 flex flex-wrap gap-2">
-          {Object.entries(outlet.services ?? {}).map(([k, v]: any) => (
+          {OUTLET_ORDER_TYPE_KEYS.map(key => (
             <Badge
-              key={k}
+              key={key}
               className={
-                v
+                services[key] !== false
                   ? "bg-[#E5F2E9] text-[#2F6947] border-[#BDE0C8]"
                   : "bg-[#F6F0E8] text-[#706356]"
               }
             >
-              {k} {v ? "✓" : "✗"}
+              {FULFILLMENT_SERVICE_COPY[key].title}{" "}
+              {services[key] !== false ? "✓" : "✗"}
             </Badge>
           ))}
+          {services.onlineOrdering === false ? (
+            <Badge className="border-[#F1C9BD] bg-[#FFF0EA] text-[#9A3627]">
+              Website orders off
+            </Badge>
+          ) : null}
         </div>
         <p className="mt-4 text-xs text-[#776A5E]">
           Menu catalog remains shared; outlet-specific availability is

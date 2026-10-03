@@ -72,6 +72,54 @@ export const OUTLET_ORDER_TYPE_KEYS = [
 
 export type OutletOrderTypeKey = (typeof OUTLET_ORDER_TYPE_KEYS)[number];
 
+/**
+ * The wire vocabulary for order types (`orders.type` in the database), mapped to
+ * the `services` flag that governs each one.
+ *
+ * This is the single mapping between the two vocabularies. It lives here rather
+ * than in a router so that the public order guard, the charge quote, the Admin
+ * fulfillment panel and the storefront selector cannot drift apart — a drifted
+ * mapping is exactly how a disabled method stays orderable.
+ */
+export const API_ORDER_TYPES = ["dine_in", "takeaway", "delivery"] as const;
+
+export type ApiOrderType = (typeof API_ORDER_TYPES)[number];
+
+export const ORDER_TYPE_SERVICE_KEY: Record<ApiOrderType, OutletOrderTypeKey> =
+  {
+    dine_in: "dineIn",
+    takeaway: "takeaway",
+    delivery: "delivery",
+  };
+
+export const ORDER_TYPE_LABEL: Record<ApiOrderType, string> = {
+  dine_in: "Dine-in",
+  takeaway: "Takeaway",
+  delivery: "Delivery",
+};
+
+/** The flags an operator may toggle, and the copy shown beside each switch. */
+export const FULFILLMENT_SERVICE_COPY: Record<
+  OutletOrderTypeKey,
+  { title: string; description: string }
+> = {
+  dineIn: {
+    title: "Dine-in",
+    description:
+      "Customers can order for a table in the café. No packaging or delivery charge is applied.",
+  },
+  takeaway: {
+    title: "Takeaway",
+    description:
+      "Customers can order to collect from the counter. A packaging charge may apply.",
+  },
+  delivery: {
+    title: "Delivery",
+    description:
+      "Customers can order to an address. Requires a delivery address and adds a delivery fee.",
+  },
+};
+
 function toBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") return value;
   // Postgres `json` can legitimately hold `"true"`/`"false"` as text.
@@ -171,4 +219,73 @@ export function availableOutletOrderTypes(
 ): OutletOrderTypeKey[] {
   const parsed = parseOutletServices(services);
   return OUTLET_ORDER_TYPE_KEYS.filter(key => parsed[key] !== false);
+}
+
+/**
+ * True when at least one customer-facing order type is switchable on.
+ *
+ * Distinct from `availableOutletOrderTypes(...).length > 0`: that also requires
+ * online ordering to be on, because a method the outlet accepts is still
+ * unreachable while `onlineOrdering` is off. Used for the "no ordering
+ * available" branch in checkout and the matching safeguard on the server.
+ */
+export function hasReachableOrderType(services: unknown): boolean {
+  return (
+    parseOutletServices(services).onlineOrdering !== false &&
+    availableOutletOrderTypes(services).length > 0
+  );
+}
+
+/**
+ * Merges a partial `services` patch into the row's existing value.
+ *
+ * Two things this protects, both of which bit before:
+ *
+ * 1. **Unknown keys survive.** `outletsRouter.update` validated `services` with
+ *    `z.object({…})`, which strips anything not declared. That silently deleted
+ *    the per-outlet charge overrides (`packingCharge`, `deliveryFee`,
+ *    `freeDeliveryAbove`) on *every* unrelated outlet edit — an admin changing a
+ *    phone number would quietly change what customers are charged.
+ * 2. **A partial patch is a patch.** The fulfillment panel sends one flag at a
+ *    time; spreading the existing value first means an absent key means
+ *    "unchanged" rather than "reset to the default".
+ *
+ * `patch` is merged *last* so an explicit `false` is honoured rather than
+ * dropped by the defaults spread.
+ */
+export function mergeOutletServices(
+  existing: unknown,
+  patch: Partial<
+    Record<OutletOrderTypeKey | "pos" | "onlineOrdering", boolean>
+  > & {
+    packingCharge?: number | null;
+    deliveryFee?: number | null;
+    freeDeliveryAbove?: number | null;
+  }
+): OutletServices {
+  const merged = parseOutletServices(existing) as Record<string, unknown>;
+
+  for (const key of [
+    ...OUTLET_ORDER_TYPE_KEYS,
+    "pos",
+    "onlineOrdering",
+  ] as const) {
+    const value = patch[key];
+    if (typeof value === "boolean") merged[key] = value;
+  }
+
+  // `null` clears an override back to the store-level setting; `undefined`
+  // leaves it alone. A patch that omits the key must not delete it.
+  for (const key of [
+    "packingCharge",
+    "deliveryFee",
+    "freeDeliveryAbove",
+  ] as const) {
+    if (!(key in patch)) continue;
+    const value = patch[key];
+    if (value === null || value === undefined) delete merged[key];
+    else if (Number.isFinite(value)) merged[key] = value;
+  }
+
+  return parseOutletServices(merged);
 }

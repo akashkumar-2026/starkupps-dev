@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { OrderDomainCode } from "@/config/order-error-codes";
+import { ApiError } from "@/api/client";
 import { TrpcError } from "./trpc-error";
 import { classifyOrderError, orderErrorDetail } from "./order-errors";
 
@@ -47,6 +48,31 @@ describe("classifyOrderError — by domain code", () => {
       classifyOrderError(apiError("Kulhad Pizza is COMING SOON.", OrderDomainCode.ITEM_COMING_SOON))
         .kind,
     ).toBe("coming_soon");
+  });
+
+  it("distinguishes all-disabled from one-disabled", () => {
+    // Telling a customer to "pick another option" when every method is off
+    // sends them to pick one that is equally unavailable.
+    const allOff = classifyOrderError(
+      apiError(
+        "This outlet is not accepting orders online at the moment.",
+        OrderDomainCode.NO_ORDER_TYPES_AVAILABLE,
+      ),
+    );
+    expect(allOff.kind).toBe("no_order_types_available");
+    expect(allOff.hint).toMatch(/different outlet/i);
+    expect(allOff.hint).not.toMatch(/another option/i);
+  });
+
+  it("reports a website-orders kill switch without telling them to try another type", () => {
+    const paused = classifyOrderError(
+      apiError(
+        "This outlet is not accepting online orders right now.",
+        OrderDomainCode.OUTLET_NOT_ACCEPTING_ORDERS,
+      ),
+    );
+    expect(paused.kind).toBe("outlet_unavailable");
+    expect(paused.hint).toMatch(/in person/i);
   });
 
   it("maps a closed outlet to its own kind", () => {
@@ -138,6 +164,24 @@ describe("domain code presence", () => {
     expect(error.status).toBe(400);
     expect(error.domainCode).toBe("COUPON_INVALID");
   });
+
+  it("reads the code off a plain REST ApiError, not just the tRPC subclass", () => {
+    // REST is the *primary* transport for every public endpoint, and the gateway
+    // forwards `domainCode` on it. Gating on `instanceof TrpcError` here meant the
+    // normal path had no code and always fell back to regex-matching English prose.
+    const restError = new ApiError(
+      "Delivery is not available at this outlet.",
+      400,
+      "/api/public/orders",
+      "ORDER_TYPE_UNAVAILABLE",
+    );
+    expect(classifyOrderError(restError).kind).toBe("order_type_unavailable");
+  });
+
+  it("classifies from the message when a REST body carries no code", () => {
+    const noCode = new ApiError("Delivery address is required.", 400, "/api/public/orders");
+    expect(classifyOrderError(noCode).kind).toBe("delivery_address_required");
+  });
 });
 
 /**
@@ -149,9 +193,24 @@ describe("domain code presence", () => {
  */
 describe("real server messages classify correctly", () => {
   const cases: Array<[string, string]> = [
+    // `assertOrderTypeOrderable` now interpolates the label, so the message is
+    // "Delivery is not available at this outlet." rather than the older fixed
+    // per-method strings. Both wordings are listed: the code path is authoritative,
+    // but a gateway that has not yet been redeployed still sends the old text.
+    ["Delivery is not available at this outlet.", "order_type_unavailable"],
+    ["Takeaway is not available at this outlet.", "order_type_unavailable"],
+    ["Dine-in is not available at this outlet.", "order_type_unavailable"],
     ["Delivery not available at this outlet.", "order_type_unavailable"],
     ["Takeaway not available at this outlet.", "order_type_unavailable"],
     ["Dine-in not available at this outlet.", "order_type_unavailable"],
+    [
+      "This outlet is not accepting online orders right now. Please try again later.",
+      "outlet_unavailable",
+    ],
+    [
+      "This outlet is not accepting orders online at the moment. Please choose another outlet.",
+      "no_order_types_available",
+    ],
     ["Selected outlet is not accepting orders right now.", "outlet_unavailable"],
     ["Selected outlet not found.", "outlet_unavailable"],
     ["Delivery address is required.", "delivery_address_required"],

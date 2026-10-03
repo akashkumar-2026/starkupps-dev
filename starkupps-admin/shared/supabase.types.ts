@@ -1564,66 +1564,93 @@ export type Database = {
       }
       orders: {
         Row: {
+          chargesTotal: number
           couponCode: string | null
           couponDiscount: number
           couponId: number | null
           createdAt: string
+          customerEmail: string | null
           customerId: number | null
+          customerName: string | null
+          customerPhone: string | null
+          deliveryAddress: string | null
+          deliveryFee: number
           id: number
           idempotencyKey: string | null
           notes: string | null
           orderNumber: number
           outletId: number | null
+          packingCharge: number
           paymentStatus: string
           shiftId: number | null
           source: string
           status: string
           subtotal: number
           tableNo: string | null
+          taxAmount: number
+          taxBreakdown: unknown
           terminalId: number | null
           total: number
           type: string
           updatedAt: string
         }
         Insert: {
+          chargesTotal?: number
           couponCode?: string | null
           couponDiscount?: number
           couponId?: number | null
           createdAt?: string
+          customerEmail?: string | null
           customerId?: number | null
+          customerName?: string | null
+          customerPhone?: string | null
+          deliveryAddress?: string | null
+          deliveryFee?: number
           id?: number
           idempotencyKey?: string | null
           notes?: string | null
           orderNumber: number
           outletId?: number | null
+          packingCharge?: number
           paymentStatus?: string
           shiftId?: number | null
           source?: string
           status?: string
           subtotal: number
           tableNo?: string | null
+          taxAmount?: number
+          taxBreakdown?: unknown
           terminalId?: number | null
           total: number
           type: string
           updatedAt?: string
         }
         Update: {
+          chargesTotal?: number
           couponCode?: string | null
           couponDiscount?: number
           couponId?: number | null
           createdAt?: string
+          customerEmail?: string | null
           customerId?: number | null
+          customerName?: string | null
+          customerPhone?: string | null
+          deliveryAddress?: string | null
+          deliveryFee?: number
           id?: number
           idempotencyKey?: string | null
           notes?: string | null
           orderNumber?: number
           outletId?: number | null
+          packingCharge?: number
           paymentStatus?: string
           shiftId?: number | null
           source?: string
           status?: string
           subtotal?: number
           tableNo?: string | null
+          taxAmount?: number
+          taxBreakdown?: unknown
           terminalId?: number | null
           total?: number
           type?: string

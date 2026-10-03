@@ -621,6 +621,15 @@ async function startServer() {
                 : 500;
   // Public REST mirrors bypass the tRPC error formatter, so scrub 5xx messages
   // here as well (unless the thrown error explicitly opted in to exposure).
+  //
+  // `domainCode` is forwarded because it is the storefront's only reliable way to
+  // tell a fulfilment problem from a menu problem. The REST transport is the
+  // *primary* path for every public endpoint, and it previously dropped the code
+  // entirely — so `classifyOrderError` had nothing to work with and fell back to
+  // regex-matching English prose. That fallback is what once told a customer
+  // whose delivery address was rejected that "some items are unavailable at this
+  // outlet". Mirrors `errorFormatter` in server/lib/trpc.ts, which promotes
+  // `cause.domainCode` for the tRPC transport.
   const sendTrpcError = (res: any, e: any) => {
     const status = trpcHttpStatus(e?.code);
     const exposed = Boolean(e?.cause?.expose);
@@ -628,7 +637,12 @@ async function startServer() {
       status >= 500 && !exposed
         ? "Something went wrong. Please try again."
         : (e?.message ?? "Request failed");
-    res.status(status).json({ error: message, code: e?.code });
+    const domainCode = e?.cause?.domainCode;
+    res.status(status).json({
+      error: message,
+      code: e?.code,
+      ...(typeof domainCode === "string" ? { domainCode } : {}),
+    });
   };
   app.get("/api/public/outlets", async (_req, res) => {
     try {

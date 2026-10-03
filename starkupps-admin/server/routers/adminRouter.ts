@@ -14,6 +14,12 @@ import {
 import { protectedProcedure, router } from "../lib/trpc";
 import { getSql, getSupabaseAdmin } from "../db/supabase";
 import { ENV } from "../config/env";
+import {
+  ORDER_STATUS_LABEL,
+  TERMINAL_ORDER_STATUSES,
+  canTransitionOrderStatus,
+  isOrderStatus,
+} from "@shared/orderStatus";
 
 type StaffRole = "staff" | "manager" | "owner";
 
@@ -375,6 +381,41 @@ function assertImageBytes(buffer: Buffer, declared: string): void {
   }
 }
 
+/**
+ * Coerces the stored `taxBreakdown` into a shape the ticket can render.
+ *
+ * Same defensive posture as `normalizeSelectedModifiers`: the column is free-form
+ * jsonb, so a legacy or hand-edited row can hold a JSON *string* rather than an
+ * array, and `.map()` on that would throw inside the render and drop the whole
+ * dialog into the error boundary — losing the customer details we just fixed.
+ * Always returns an array; an unrecognised shape yields `[]`.
+ */
+function normalizeTaxBreakdown(raw: unknown): Array<{
+  name: string;
+  rate: number;
+  amount: number;
+}> {
+  let value = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(entry => {
+      const row = (entry ?? {}) as Record<string, unknown>;
+      return {
+        name: String(row.name ?? ""),
+        rate: decimal(row.rate),
+        amount: decimal(row.amount),
+      };
+    })
+    .filter(line => line.name !== "");
+}
+
 async function orderDetail(orderId: number) {
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
@@ -394,18 +435,55 @@ async function orderDetail(orderId: number) {
       message: error.message,
     });
   if (!order) return null;
-  let customerName: string | null = null;
-  let customerPhone: string | null = null;
-  if ((order as any).customerId) {
-    const { data: cust } = await supabase
-      .from("customers")
-      .select("name,phone")
-      .eq("id", (order as any).customerId)
-      .limit(1)
-      .maybeSingle();
-    customerName = (cust as any)?.name ?? null;
-    customerPhone = (cust as any)?.phone ?? null;
-  }
+  // Customer and outlet are joined in parallel rather than sequentially: this
+  // function is called on every list-row action (updateStatus, cancel) as well as
+  // on open, and three chained round-trips per call was the slowest thing on the
+  // status-change path.
+  //
+  // `email` was never selected before, so a customer who signed in and had an
+  // email on file was never shown to the counter staff handling their order.
+  const customerPromise = (async () => {
+    if (!(order as any).customerId) return null;
+    try {
+      const r = await supabase
+        .from("customers")
+        .select("name,phone,email")
+        .eq("id", (order as any).customerId)
+        .limit(1)
+        .maybeSingle();
+      return (r.data as any) ?? null;
+    } catch {
+      // A missing profile must not fail the ticket. The order's own snapshot
+      // still carries the name and phone the customer gave us at checkout, so a
+      // deleted customer row degrades to "snapshot only", not "no customer".
+      return null;
+    }
+  })();
+  const outletPromise = (async () => {
+    if (!(order as any).outletId) return null;
+    try {
+      const r = await supabase
+        .from("outlets")
+        .select("name,code")
+        .eq("id", (order as any).outletId)
+        .limit(1)
+        .maybeSingle();
+      return (r.data as any) ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  const [cust, outletRow] = await Promise.all([customerPromise, outletPromise]);
+  // Prefer the order-time snapshot over the live profile. `customers` is shared
+  // mutable state: a later order (or a profile edit) rewrites what this ticket
+  // would otherwise claim the customer said. Historical rows predate the snapshot
+  // columns and are backfilled from `customers`, so both eras read correctly.
+  const customerName: string | null =
+    (order as any).customerName ?? cust?.name ?? null;
+  const customerPhone: string | null =
+    (order as any).customerPhone ?? cust?.phone ?? null;
+  const customerEmail: string | null =
+    (order as any).customerEmail ?? cust?.email ?? null;
   const { data: linesRaw, error: linesErr } = await supabase
     .from("order_items")
     .select("*")
@@ -420,7 +498,16 @@ async function orderDetail(orderId: number) {
     ...(order as any),
     customerName,
     customerPhone,
+    customerEmail,
+    outletName: outletRow?.name ?? null,
+    outletCode: outletRow?.code ?? null,
     subtotal: decimal((order as any).subtotal),
+    couponDiscount: decimal((order as any).couponDiscount),
+    packingCharge: decimal((order as any).packingCharge),
+    deliveryFee: decimal((order as any).deliveryFee),
+    taxAmount: decimal((order as any).taxAmount),
+    chargesTotal: decimal((order as any).chargesTotal),
+    taxBreakdown: normalizeTaxBreakdown((order as any).taxBreakdown),
     total: decimal((order as any).total),
     items: lines.map((line: any) => ({
       ...line,
@@ -634,8 +721,14 @@ export const adminRouter = router({
             }
             if (input.search) {
               const like = `%${input.search}%`;
+              // COALESCE to the order's own snapshot before the profile's, and
+              // search both. `o.*` below aliases `customerName`/`customerPhone`
+              // over the joined `c.` columns, so the queue shows what the
+              // customer gave us at checkout — but a search that only matched
+              // `c.` would fail to find an order whose profile phone has since
+              // changed. `idx_orders_customer_phone` serves the `o.` arm.
               conditions.push(
-                `(o."orderNumber"::text ILIKE $${idx} OR c."name" ILIKE $${idx} OR c."phone" ILIKE $${idx})`
+                `(o."orderNumber"::text ILIKE $${idx} OR COALESCE(o."customerName", c."name") ILIKE $${idx} OR COALESCE(o."customerPhone", c."phone") ILIKE $${idx} OR c."name" ILIKE $${idx} OR c."phone" ILIKE $${idx})`
               );
               params.push(like);
               idx++;
@@ -645,9 +738,14 @@ export const adminRouter = router({
               : "";
             const rows: any[] = await sql.unsafe(
               `
-            SELECT o.*, c."name" as "customerName", c."phone" as "customerPhone"
+            SELECT o.*,
+                   COALESCE(o."customerName", c."name") as "customerName",
+                   COALESCE(o."customerPhone", c."phone") as "customerPhone",
+                   COALESCE(o."customerEmail", c."email") as "customerEmail",
+                   ot."name" as "outletName"
             FROM "orders" o
             LEFT JOIN "customers" c ON o."customerId" = c."id"
+            LEFT JOIN "outlets" ot ON ot."id" = o."outletId"
             ${where}
             ORDER BY o."id" DESC
             LIMIT $${idx++}
@@ -715,27 +813,54 @@ export const adminRouter = router({
           // If search filter removed many rows, we may need to fetch more - for simplicity, slice after filter; nextCursor handling remains approximate
           // To preserve pagination correctness when search is used without sql, we rely on sql path above; this is fallback
         }
-        // Enrich with customer names
+        // Enrich with customer + outlet names. `select("*")` already carries the
+        // order-time snapshot columns, so the profile lookup is only a fallback
+        // for rows that predate the snapshot (or whose customer was deleted).
         const customerIds = Array.from(
           new Set(rowsRaw.map((o: any) => o.customerId).filter(Boolean))
+        );
+        const outletIds = Array.from(
+          new Set(rowsRaw.map((o: any) => o.outletId).filter(Boolean))
         );
         const customerMap = new Map<number, any>();
         if (customerIds.length) {
           const { data: custs } = await supabase
             .from("customers")
-            .select("id,name,phone")
+            .select("id,name,phone,email")
             .in("id", customerIds);
           for (const c of (custs ?? []) as any[]) customerMap.set(c.id, c);
+        }
+        const outletMap = new Map<number, any>();
+        if (outletIds.length) {
+          const { data: outs } = await supabase
+            .from("outlets")
+            .select("id,name,code")
+            .in("id", outletIds);
+          for (const o of (outs ?? []) as any[]) outletMap.set(o.id, o);
         }
         const enriched = rowsRaw.map((o: any) => ({
           ...o,
           total: decimal(o.total),
           subtotal: decimal(o.subtotal),
-          customerName: o.customerId
-            ? (customerMap.get(o.customerId)?.name ?? null)
-            : null,
-          customerPhone: o.customerId
-            ? (customerMap.get(o.customerId)?.phone ?? null)
+          couponDiscount: decimal(o.couponDiscount),
+          chargesTotal: decimal(o.chargesTotal),
+          customerName:
+            o.customerName ??
+            (o.customerId
+              ? (customerMap.get(o.customerId)?.name ?? null)
+              : null),
+          customerPhone:
+            o.customerPhone ??
+            (o.customerId
+              ? (customerMap.get(o.customerId)?.phone ?? null)
+              : null),
+          customerEmail:
+            o.customerEmail ??
+            (o.customerId
+              ? (customerMap.get(o.customerId)?.email ?? null)
+              : null),
+          outletName: o.outletId
+            ? (outletMap.get(o.outletId)?.name ?? null)
             : null,
         }));
         const page = enriched.slice(0, input.limit);
@@ -951,11 +1076,33 @@ export const adminRouter = router({
             message: "The requested order no longer exists.",
           });
         await assertOutletAccess(ctx.user, (before as any).outletId ?? null);
-        if (before.status === "cancelled" || before.status === "completed")
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Closed orders cannot be advanced.",
-          });
+        // Enforce the lifecycle rather than trusting the button that was pressed.
+        //
+        // Previously the only rule was "not completed and not cancelled", so
+        // `ready -> new`, `preparing -> completed` and `new -> completed` were all
+        // accepted over the API even though the UI never offers them. That let a
+        // stale tab, a replayed request or a hand-rolled call mark an order
+        // complete before it was ever made — which is what actually reports
+        // revenue in `admin.dashboard` and `analytics.overview`.
+        //
+        // Idempotent re-submission of the *current* status is still allowed, so a
+        // double-click or a client retry cannot fail with a confusing error.
+        const current = before.status;
+        if (current !== input.status) {
+          if (!isOrderStatus(current))
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `This ticket is in an unrecognised state (${current}).`,
+            });
+          if (!canTransitionOrderStatus(current, input.status)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: TERMINAL_ORDER_STATUSES.includes(current)
+                ? "This ticket is already closed and cannot be changed."
+                : `A ${ORDER_STATUS_LABEL[current]} ticket cannot move to ${ORDER_STATUS_LABEL[input.status]}.`,
+            });
+          }
+        }
         const { error } = await supabase
           .from("orders")
           .update({ status: input.status } as any)

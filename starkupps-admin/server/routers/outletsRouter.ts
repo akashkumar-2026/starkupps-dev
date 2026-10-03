@@ -11,7 +11,11 @@ import {
 } from "../db/index";
 import { protectedProcedure, router } from "../lib/trpc";
 import { getSupabaseAdmin, getSql } from "../db/supabase";
-import { parseOutletServices } from "@shared/outletServices";
+import {
+  availableOutletOrderTypes,
+  mergeOutletServices,
+  parseOutletServices,
+} from "@shared/outletServices";
 import {
   buildOutletDeleteImpact,
   OPEN_DELIVERY_STATUSES,
@@ -820,8 +824,16 @@ export const outletsRouter = router({
           message: "Outlet not found.",
         });
       const { id, ...data } = input;
+      // Merge, don't replace. `input.services` is the five declared booleans,
+      // but the column is a jsonb bag that also carries per-outlet charge
+      // overrides (packingCharge / deliveryFee / freeDeliveryAbove) and any key a
+      // future migration adds. Writing `input.services` straight through dropped
+      // all of them, so editing an outlet's phone number silently reset what
+      // customers were charged there.
+      const mergedServices = mergeOutletServices(cur.services, data.services);
       const payload: any = {
         ...data,
+        services: mergedServices,
         latitude: data.latitude ?? null,
         longitude: data.longitude ?? null,
         deliveryRadiusKm: data.deliveryRadiusKm,
@@ -884,6 +896,112 @@ export const outletsRouter = router({
         after: payload,
       });
       return { success: true };
+    }),
+
+  /**
+   * Toggles which ordering methods this outlet offers.
+   *
+   * Separate from `update` on purpose. `update` is a whole-outlet form: it
+   * requires name, hours, coordinates and all five flags at once, so flipping one
+   * fulfilment switch would have meant loading and resubmitting the entire
+   * outlet — and any admin who had not filled the form in simply had no way to
+   * disable delivery at all. This accepts a *patch*: absent keys mean
+   * "unchanged", so the UI can save one toggle without touching the rest.
+   *
+   * Merge semantics are handled by `mergeOutletServices`, which also preserves
+   * the charge overrides the column may carry.
+   *
+   * Server-side validation of availability lives in `public.orders.create` and
+   * `public.settings.charges`; this procedure only records the operator's intent.
+   * Turning a method off is always allowed, including turning the last one off —
+   * that is a legitimate "we are closed online" state, and the storefront renders
+   * it as such rather than silently substituting a different method.
+   */
+  updateServices: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        services: z
+          .object({
+            dineIn: z.boolean().optional(),
+            takeaway: z.boolean().optional(),
+            delivery: z.boolean().optional(),
+            pos: z.boolean().optional(),
+            onlineOrdering: z.boolean().optional(),
+            packingCharge: z.number().min(0).max(100000).nullable().optional(),
+            deliveryFee: z.number().min(0).max(100000).nullable().optional(),
+            freeDeliveryAbove: z
+              .number()
+              .min(0)
+              .max(10000000)
+              .nullable()
+              .optional(),
+          })
+          .refine(patch => Object.keys(patch).length > 0, {
+            message: "No settings supplied.",
+          }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await requirePerm(ctx.user, "outlets.update");
+      await assertOutletAccess(ctx.user, input.id);
+      const supabase = getSupabaseAdmin();
+      const { data: cur, error: curErr } = await supabase
+        .from("outlets")
+        .select("id,services")
+        .eq("id", input.id)
+        .limit(1)
+        .maybeSingle();
+      if (curErr)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: curErr.message,
+        });
+      if (!cur)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Outlet not found.",
+        });
+
+      const before = parseOutletServices((cur as any).services);
+      const next = mergeOutletServices((cur as any).services, input.services);
+      const { error: updErr } = await supabase
+        .from("outlets")
+        .update({ services: next } as any)
+        .eq("id", input.id);
+      if (updErr)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: updErr.message,
+        });
+      await recordAudit({
+        actorUserId: ctx.user.id,
+        entityType: "outlet",
+        entityId: input.id,
+        outletId: input.id,
+        action: "services_updated",
+        before: { services: before },
+        after: { services: next, patch: input.services },
+      });
+      // Return the *persisted* value, not the computed one, so the panel renders
+      // what the database now holds instead of what it hoped it held.
+      const { data: verify, error: verifyErr } = await supabase
+        .from("outlets")
+        .select("services")
+        .eq("id", input.id)
+        .limit(1)
+        .maybeSingle();
+      if (verifyErr)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: verifyErr.message,
+        });
+      return {
+        services: parseOutletServices((verify as any)?.services),
+        availableOrderTypes: availableOutletOrderTypes(
+          (verify as any)?.services
+        ),
+      };
     }),
 
   setStatus: protectedProcedure

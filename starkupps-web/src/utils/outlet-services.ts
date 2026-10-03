@@ -96,3 +96,24 @@ export function parseOutletServices(raw: unknown): OutletServices {
 export function outletSupportsOrderType(services: unknown, orderType: OrderTypeId): boolean {
   return parseOutletServices(services)[ORDER_TYPE_SERVICE_KEY[orderType]] !== false;
 }
+
+/** Every order type this outlet offers, in the order the UI displays them. */
+export const ALL_ORDER_TYPES: readonly OrderTypeId[] = ["dine-in", "takeaway", "delivery"];
+
+export function availableOrderTypes(services: unknown): OrderTypeId[] {
+  return ALL_ORDER_TYPES.filter((type) => outletSupportsOrderType(services, type));
+}
+
+/**
+ * True when at least one order type can actually be reached.
+ *
+ * Separate from `availableOrderTypes().length > 0` because a method the outlet
+ * accepts is still unreachable while `onlineOrdering` is off. The checkout needs
+ * this to tell "no options rendered" apart from "no options to render", so it
+ * only falls back to the full list when the configuration genuinely could not be
+ * read — never when the operator has deliberately closed ordering.
+ */
+export function hasReachableOrderType(services: unknown): boolean {
+  const parsed = parseOutletServices(services);
+  return parsed.onlineOrdering !== false && availableOrderTypes(services).length > 0;
+}

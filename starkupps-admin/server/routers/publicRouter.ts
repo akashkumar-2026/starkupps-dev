@@ -14,6 +14,7 @@ import { publicProcedure, router } from "../lib/trpc";
 import { resolveInstagramThumbnail } from "../lib/instagram-thumbnails";
 import { getSql, getSupabaseAdmin } from "../db/supabase";
 import { parseOutletServices } from "@shared/outletServices";
+import { evaluateFulfillment } from "@shared/fulfillment";
 import { OrderDomainCode } from "@shared/orderErrorCodes";
 import {
   INSTAGRAM_LIMITS,
@@ -131,6 +132,16 @@ export async function resolveChargeConfig(
     Number(services.deliveryFee) >= 0
   )
     deliveryFee = Number(services.deliveryFee);
+  // `parseOutletServices` preserves `freeDeliveryAbove` but it was never applied
+  // here, so a per-outlet override was silently ignored while its store-level
+  // counterpart worked. Same rule as the other two: only override when finite
+  // and non-negative, so a malformed value cannot produce a negative threshold
+  // that would waive delivery on every order.
+  if (
+    Number.isFinite(Number(services.freeDeliveryAbove)) &&
+    Number(services.freeDeliveryAbove) >= 0
+  )
+    freeDeliveryAbove = Number(services.freeDeliveryAbove);
   let taxRates: Array<{ name: string; rate: number }> = [];
   try {
     const { data: taxes } = await supabase
@@ -158,8 +169,19 @@ export type OrderQuote = {
   total: number;
 };
 
-// Pure computation so it can be unit-tested. Taxes apply on (subtotal -
-// discount), matching finance revenue reporting.
+/**
+ * Charges for one order, given the outlet's resolved rates.
+ *
+ * Pure and exported so it can be unit-tested without a database. The rules:
+ *
+ * * Dine-in is never charged packaging (`packing = 0` for `dine_in`).
+ * * Only delivery is charged a delivery fee.
+ * * A `free_delivery` coupon, or an order at/above the free-delivery threshold,
+ *   waives the delivery fee.
+ * * Tax applies to `taxable` (items minus discount), *not* to packaging or
+ *   delivery — which is what the finance revenue reports assume, and is why
+ *   `total` is not simply `subtotal + charges`.
+ */
 export function computeOrderQuote(input: {
   type: OrderType;
   taxable: number;
@@ -194,6 +216,65 @@ export function computeOrderQuote(input: {
     chargesTotal,
     total: round2(taxable + chargesTotal),
   };
+}
+
+/**
+ * Builds the `orders.create` response from a *persisted* order row.
+ *
+ * Every exit has to go through this. The idempotency paths used to hand-roll
+ * their own response and got it wrong: two of the three returned
+ * `charges: 0` and no `tax` at all, so a customer who retried after a dropped
+ * connection was told their order cost nothing extra — while the same order,
+ * fetched through any other route, priced correctly.
+ *
+ * Reading the stored breakdown (rather than reusing an in-memory quote) is
+ * deliberate: on a retry the persisted figures are the authoritative ones, and
+ * they are guaranteed to agree with what the Admin panel shows.
+ */
+function orderCreatedResponse(order: any) {
+  return {
+    id: Number(order.id),
+    orderNumber: Number(order.orderNumber),
+    status: String(order.status ?? "new"),
+    subtotal: toNum(order.subtotal),
+    couponDiscount: toNum(order.couponDiscount),
+    charges: toNum(order.chargesTotal),
+    packing: toNum(order.packingCharge),
+    delivery: toNum(order.deliveryFee),
+    tax: toNum(order.taxAmount),
+    total: toNum(order.total),
+    outletId: order.outletId ?? null,
+    type: String(order.type ?? ""),
+    createdAt: order.createdAt ?? null,
+    already: true as const,
+  };
+}
+
+/**
+ * The one place a fulfilment method is allowed past the server boundary.
+ *
+ * Both `settings.charges` (the pre-checkout quote) and `orders.create` (the
+ * write) call this, so a method disabled mid-checkout fails at the *quote* with
+ * the same machine-readable code the write would have used, instead of letting
+ * the customer fill in the whole form and fail at the end.
+ *
+ * The decision itself lives in `shared/fulfillment.ts` so it can be unit-tested
+ * without importing this module: `server/routers` transitively loads `argon2`,
+ * whose native binding segfaults on this Node build and takes the whole vitest
+ * worker with it (the reason `server/__tests__/outlets.delete.test.ts` avoids
+ * importing the routers).
+ *
+ * Rejections carry a `domainCode`, promoted by the tRPC error formatter and by
+ * the REST mirror in `server/index.ts`, and classified on by the storefront.
+ */
+function assertOrderTypeOrderable(outlet: any, type: OrderType): void {
+  const verdict = evaluateFulfillment(outlet?.services, type);
+  if (verdict.allowed) return;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: verdict.message,
+    cause: { domainCode: verdict.code },
+  });
 }
 
 export const publicRouter = router({
@@ -1292,7 +1373,20 @@ export const publicRouter = router({
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Selected outlet not found.",
+            cause: { domainCode: OrderDomainCode.OUTLET_NOT_FOUND },
           });
+        // A closed outlet used to quote happily and only fail at submission, so
+        // the customer saw a live total for an order that could not be placed.
+        if ((outletRow as any).status !== "active")
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This outlet is not accepting orders right now.",
+            cause: { domainCode: OrderDomainCode.OUTLET_UNAVAILABLE },
+          });
+        // Quote and order creation share one availability guard, so a method
+        // disabled while the cart is open fails here — where the storefront can
+        // react — instead of after the whole form is filled in.
+        assertOrderTypeOrderable(outletRow, input.type);
         const config = await resolveChargeConfig(supabase, outletRow);
         const quote = computeOrderQuote({
           type: input.type,
@@ -1378,25 +1472,13 @@ export const publicRouter = router({
             message: "Selected outlet is not accepting orders right now.",
             cause: { domainCode: OrderDomainCode.OUTLET_UNAVAILABLE },
           });
-        const services = parseOutletServices(outlet.services);
-        if (input.type === "delivery" && !services.delivery)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Delivery not available at this outlet.",
-            cause: { domainCode: OrderDomainCode.ORDER_TYPE_UNAVAILABLE },
-          });
-        if (input.type === "takeaway" && !services.takeaway)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Takeaway not available at this outlet.",
-            cause: { domainCode: OrderDomainCode.ORDER_TYPE_UNAVAILABLE },
-          });
-        if (input.type === "dine_in" && !services.dineIn)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Dine-in not available at this outlet.",
-            cause: { domainCode: OrderDomainCode.ORDER_TYPE_UNAVAILABLE },
-          });
+        // Replaces the three hand-rolled per-method `if` blocks. Same rejections
+        // and the same `ORDER_TYPE_UNAVAILABLE` code for a disabled method, plus
+        // two cases the old guards missed entirely: an outlet with online
+        // ordering switched off still accepted web orders, and an outlet with
+        // every method switched off reported a specific method as the problem
+        // when the real issue was that nothing was enabled.
+        assertOrderTypeOrderable(outlet, input.type);
         if (input.type === "delivery" && !input.customer.address)
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -1414,18 +1496,7 @@ export const publicRouter = router({
             .limit(1)
             .maybeSingle();
           if (existingOrder) {
-            const o: any = existingOrder;
-            return {
-              id: o.id,
-              orderNumber: o.orderNumber,
-              status: o.status,
-              subtotal: toNum(o.subtotal),
-              couponDiscount: toNum(o.couponDiscount),
-              charges: 0,
-              total: toNum(o.total),
-              outletId: o.outletId,
-              already: true,
-            };
+            return orderCreatedResponse(existingOrder);
           }
           // Legacy: coupon redemptions stored the key before orders did.
           const { data: existingRedeem } = await supabase
@@ -1441,25 +1512,14 @@ export const publicRouter = router({
               .eq("id", (existingRedeem as any).orderId)
               .limit(1)
               .maybeSingle();
-            if (ord)
-              return {
-                id: (ord as any).id,
-                orderNumber: (ord as any).orderNumber,
-                status: (ord as any).status,
-                subtotal: toNum((ord as any).subtotal),
-                couponDiscount: toNum((ord as any).couponDiscount),
-                charges: 0,
-                total: toNum((ord as any).total),
-                outletId: (ord as any).outletId,
-                already: true,
-              };
+            if (ord) return orderCreatedResponse(ord);
           }
           // Check orders created in last 5 minutes with same phone+outlet+type (fallback dedup)
           const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
           const { data: recentOrders } = await supabase
             .from("orders")
             .select(
-              "id,customerId,outletId,type,createdAt,orderNumber,status,total,subtotal"
+              "id,customerId,outletId,type,createdAt,orderNumber,status,total,subtotal,couponDiscount,chargesTotal,packingCharge,deliveryFee,taxAmount"
             )
             .eq("outletId", input.outletId)
             .eq("type", input.type)
@@ -1498,14 +1558,7 @@ export const publicRouter = router({
                       l.quantity === input.items[i].quantity
                   )
                 ) {
-                  return {
-                    id: r.id,
-                    orderNumber: r.orderNumber,
-                    status: r.status,
-                    total: toNum(r.total),
-                    subtotal: toNum(r.subtotal),
-                    already: true,
-                  };
+                  return orderCreatedResponse(r);
                 }
               }
             }
@@ -2091,7 +2144,7 @@ export const publicRouter = router({
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const rows = await tx.unsafe(
-                  `INSERT INTO "orders" ("orderNumber","customerId","outletId","shiftId","type","source","status","subtotal","total","paymentStatus","couponId","couponCode","couponDiscount","notes","idempotencyKey") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+                  `INSERT INTO "orders" ("orderNumber","customerId","outletId","shiftId","type","source","status","subtotal","total","paymentStatus","couponId","couponCode","couponDiscount","notes","idempotencyKey","customerName","customerPhone","customerEmail","deliveryAddress","packingCharge","deliveryFee","taxAmount","taxBreakdown","chargesTotal") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24) RETURNING *`,
                   [
                     orderNumber,
                     customerId,
@@ -2108,6 +2161,39 @@ export const publicRouter = router({
                     couponDiscount.toFixed(2),
                     input.notes ?? null,
                     input.idempotencyKey ?? null,
+                    // ── Order-time customer snapshot ──
+                    //
+                    // The address was validated two screens earlier and then had
+                    // nowhere to go: neither `orders` nor `customers` had a
+                    // column for it, so a delivery order was accepted with a
+                    // full address and the address was discarded. Nothing — not
+                    // the Admin ticket, not a rider — could ever see it.
+                    //
+                    // Name/phone/email are snapshotted for the same reason:
+                    // `customers` is a shared profile that a later order (or a
+                    // profile edit) rewrites, and a receipt must keep saying what
+                    // the customer actually gave us at this checkout. This
+                    // mirrors how `order_items` already snapshots `itemName`.
+                    input.customer.name,
+                    phoneNorm,
+                    input.customer.email ?? null,
+                    // Only a delivery order has somewhere to send it. Storing it
+                    // for dine-in/takeaway would put a stale address on a
+                    // counter ticket and is blocked by a CHECK constraint.
+                    input.type === "delivery"
+                      ? (input.customer.address ?? null)
+                      : null,
+                    // ── Charge breakdown ──
+                    //
+                    // `computeOrderQuote` already produced these. They used to
+                    // travel back to the browser and stop there, so a stored
+                    // `total` could never be reconciled against its own row
+                    // (a ₹55 subtotal showing ₹70 with no explanation).
+                    quote.packing.toFixed(2),
+                    quote.delivery.toFixed(2),
+                    quote.tax.toFixed(2),
+                    quote.taxLines,
+                    chargesTotal.toFixed(2),
                   ]
                 );
                 insertedOrder = rows[0];
@@ -2248,16 +2334,12 @@ export const publicRouter = router({
           });
         }
 
+        // Same builder as the idempotency paths, with `already` overridden. The
+        // figures come from the row just read back inside the transaction, not
+        // from the in-memory quote — so a client comparing the confirmation
+        // total against what it is later shown is comparing like with like.
         return {
-          id: resultOrder.id,
-          orderNumber: resultOrder.orderNumber,
-          status: resultOrder.status,
-          subtotal,
-          couponDiscount,
-          charges: chargesTotal,
-          tax: quote.tax,
-          total,
-          outletId: input.outletId,
+          ...orderCreatedResponse(resultOrder),
           already,
         };
       }),

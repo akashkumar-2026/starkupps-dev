@@ -20,6 +20,25 @@ export const OrderDomainCode = {
   OUTLET_NOT_FOUND: "OUTLET_NOT_FOUND",
   /** Outlet exists but is not accepting orders (inactive/maintenance). */
   OUTLET_UNAVAILABLE: "OUTLET_UNAVAILABLE",
+  /**
+   * The outlet has turned off web/online ordering as a whole
+   * (`outlets.services.onlineOrdering`).
+   *
+   * Distinct from `OUTLET_UNAVAILABLE`: the outlet is open for walk-ins and POS,
+   * it has simply stopped taking website orders. Retrying with a different
+   * order type does not help, so the storefront must not suggest it.
+   */
+  OUTLET_NOT_ACCEPTING_ORDERS: "OUTLET_NOT_ACCEPTING_ORDERS",
+  /**
+   * Every customer-facing order type is switched off
+   * (`dineIn`, `takeaway` and `delivery` all false).
+   *
+   * Also distinct from `ORDER_TYPE_UNAVAILABLE`: no individual method is
+   * misconfigured — the outlet has deliberately closed online ordering by
+   * leaving nothing enabled, and the customer needs to be told ordering is
+   * unavailable here rather than that their chosen method happens to be off.
+   */
+  NO_ORDER_TYPES_AVAILABLE: "NO_ORDER_TYPES_AVAILABLE",
   /** Outlet does not offer the requested order type. */
   ORDER_TYPE_UNAVAILABLE: "ORDER_TYPE_UNAVAILABLE",
   /** Delivery was requested without an address. */

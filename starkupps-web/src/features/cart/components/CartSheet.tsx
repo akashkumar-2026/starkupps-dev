@@ -16,7 +16,11 @@ import { projectEndpoint, springs } from "@/utils/motion";
 import { cn } from "@/utils/cn";
 import { errorMessage } from "@/utils/errors";
 import { classifyOrderError, orderErrorDetail } from "@/utils/order-errors";
-import { outletSupportsOrderType } from "@/utils/outlet-services";
+import {
+  availableOrderTypes,
+  hasReachableOrderType,
+  parseOutletServices,
+} from "@/utils/outlet-services";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -98,21 +102,58 @@ export function CartSheet() {
   const [couponMsg, setCouponMsg] = useState("");
 
   /**
-   * Only offer the order types this outlet actually serves.
+   * Which order types this outlet actually offers, and whether it can take any
+   * order at all.
    *
-   * The list used to be hardcoded, so a customer could pick delivery at an
-   * outlet with delivery disabled, fill in the whole form, and only then be
-   * rejected. Falls back to the full list while the outlet is unknown, and
-   * always keeps the currently selected type visible so a stale selection
-   * cannot silently change what the customer is about to pay for.
+   * The list used to be hardcoded, so a customer could pick delivery at an outlet
+   * with delivery disabled, fill in the whole form, and only then be rejected.
+   *
+   * `configKnown` distinguishes "the configuration has not loaded (or could not
+   * be read)" from "the operator has switched everything off". The distinction
+   * is the whole point of this rewrite: the previous code collapsed both into
+   * `supported.length === 0 → return orderTypes`, so an outlet with every method
+   * disabled showed the customer all three tabs and let them fill in a form that
+   * could only be rejected. Rendering nothing and saying "ordering is
+   * unavailable here" is the truthful answer for a closed outlet, while an
+   * unreadable config still falls back to the full list — a storefront that hides
+   * everything because one payload failed to parse is worse than one that offers
+   * too much and lets the server reject it.
    */
+  const outletServices = outlet?.services;
+  const configKnown = outlet !== undefined && outlet !== null;
+  const enabledTypes = useMemo(() => availableOrderTypes(outletServices), [outletServices]);
+  // The tabs to render, in canonical display order.
   const offeredOrderTypes = useMemo(() => {
-    const supported = orderTypes.filter((t) => outletSupportsOrderType(outlet?.services, t.id));
-    // Never render zero tabs, and never drop the active one.
-    if (supported.length === 0) return orderTypes;
-    if (!supported.some((t) => t.id === orderType)) return [supported[0]!, ...supported.slice(1)];
-    return supported;
-  }, [outlet?.services, orderType]);
+    if (!configKnown) return orderTypes;
+    if (enabledTypes.length === 0) return [];
+    // Keep the active type first when it is available so the selection does not
+    // jump under the customer as unrelated state updates land.
+    if (enabledTypes.includes(orderType)) {
+      return [
+        ...orderTypes.filter((t) => t.id === orderType),
+        ...orderTypes.filter((t) => t.id !== orderType && enabledTypes.includes(t.id)),
+      ];
+    }
+    return orderTypes.filter((t) => enabledTypes.includes(t.id));
+  }, [configKnown, enabledTypes, orderType]);
+
+  /**
+   * No tab can be rendered, so checkout must be blocked rather than attempted.
+   *
+   * `canOrderOnline` also covers the separate case where the outlet accepts every
+   * method but has website ordering switched off wholesale — the tabs would
+   * otherwise all render and every submission would be refused.
+   */
+  const orderingClosed = configKnown && !hasReachableOrderType(outletServices);
+  /** Nothing to select at all, as opposed to selectable-but-closed. */
+  const noOrderTypes = orderingClosed && offeredOrderTypes.length === 0;
+  /**
+   * Which of the two "closed" reasons applies, so the message can be specific.
+   * "Website orders paused" is transient and points at visiting in person;
+   * "no methods enabled" points at another outlet.
+   */
+  const onlineOrderingOff =
+    orderingClosed && parseOutletServices(outletServices).onlineOrdering === false;
 
   // If the selected type stops being offered, move the customer to one that is.
   // Declared below `form`, which this effect writes to.
@@ -162,19 +203,38 @@ export function CartSheet() {
   });
 
   // Keep form's discriminated field in sync with cart's orderType.
+  //
+  // This is the *passive* sync path — it exists for when the cart's type changes
+  // without going through `handleOrderTypeSwitch` (e.g. the outlet-reconciliation
+  // effect below re-points a stale selection). It must not clobber customer input:
+  // the address is only dropped when the type has genuinely moved away from
+  // delivery, matching what an explicit switch does.
   useEffect(() => {
     const current = form.getValues("orderType");
-    if (current !== orderType) {
-      form.setValue("orderType", orderType, { shouldValidate: false, shouldDirty: false });
-      if (orderType !== "delivery") {
-        form.clearErrors("address");
-      }
+    if (current === orderType) return;
+    const wasDelivery = current === "delivery";
+    form.setValue("orderType", orderType, { shouldValidate: false, shouldDirty: false });
+    if (wasDelivery && orderType !== "delivery") {
+      form.setValue("address", "", { shouldValidate: false, shouldDirty: false });
+    }
+    if (orderType !== "delivery") {
+      form.clearErrors("address");
     }
   }, [orderType, form]);
 
-  // The selected outlet may stop offering the type the customer picked (they
-  // switched outlets mid-checkout). Move them to one it does offer rather than
-  // leaving a dead tab selected.
+  /**
+   * The selected outlet may stop offering the type the customer picked — they
+   * switched outlets mid-checkout, or an admin disabled the method while the
+   * page was open. Move them onto one that is offered.
+   *
+   * Common fields (name, phone, notes) are deliberately preserved: re-pointing
+   * the fulfilment method must not discard what they have already typed. Only
+   * `orderType` is rewritten. The address is *not* cleared here, because it is
+   * cleared where it actually causes harm — see `handleOrderTypeSwitch`.
+   *
+   * When nothing is offered the current type is left alone rather than being
+   * forced somewhere invalid; `canOrderOnline` disables submission instead.
+   */
   useEffect(() => {
     if (offeredOrderTypes.some((t) => t.id === orderType)) return;
     const next = offeredOrderTypes[0];
@@ -309,13 +369,26 @@ export function CartSheet() {
   };
 
   const onSubmit = async (values: CheckoutFormValues) => {
-    const parsed = checkoutSchema.parse(values) as unknown as {
+    // Inside the guard rather than bare: `checkoutSchema.parse` throws on
+    // invalid input, and an uncaught throw here escaped `onSubmit` entirely
+    // (the `try` started further down, after the request was built). The cart
+    // and every field the customer typed were left in place with no feedback.
+    let parsed: {
       orderType: OrderType;
       name: string;
       phone: string;
       address: string;
       notes: string;
     };
+    try {
+      parsed = checkoutSchema.parse(values) as unknown as typeof parsed;
+    } catch {
+      // RHF has already rendered per-field messages; re-running zod here
+      // normally cannot fail. If the two ever disagree, surface it rather than
+      // submitting something the server will reject.
+      toast.error("Please check the highlighted details.");
+      return;
+    }
 
     if (!outletId) {
       toast.error("Please select an outlet.");
@@ -323,6 +396,23 @@ export function CartSheet() {
     }
     if (lines.length === 0) {
       toast.error("Cart is empty.");
+      return;
+    }
+    // The server re-checks all of this (and is the authority), but catching it
+    // here means a customer who is still looking at a now-disabled method gets
+    // told to pick another one instead of filling in the form first.
+    if (orderingClosed) {
+      toast.error("Online ordering is unavailable at this outlet.", {
+        description: onlineOrderingOff
+          ? "They have paused website orders for now. You can still order in person or by phone."
+          : "None of the ordering options are switched on. Please choose another outlet.",
+      });
+      return;
+    }
+    if (configKnown && !offeredOrderTypes.some((t) => t.id === parsed.orderType)) {
+      toast.error(`${ORDER_TYPE_LABELS[parsed.orderType]} is no longer available here.`, {
+        description: "Please choose one of the available options to continue.",
+      });
       return;
     }
 
@@ -415,10 +505,25 @@ export function CartSheet() {
     }
   };
 
+  /**
+   * Switching fulfilment method.
+   *
+   * The address field is *unmounted* for dine-in and takeaway, but React Hook
+   * Form keeps its value unless told to unregister — so switching delivery →
+   * takeaway and submitting used to send a delivery address on a counter
+   * ticket. The value is now explicitly cleared, which is also what the customer
+   * expects: a counter order has no address, and silently carrying one to a new
+   * delivery order later would put them at the wrong place.
+   *
+   * Name, phone and notes are untouched, so a customer flicking between tabs to
+   * compare charges does not lose what they typed.
+   */
   const handleOrderTypeSwitch = (next: OrderType) => {
     setOrderType(next);
     form.setValue("orderType", next, { shouldValidate: false });
-    if (next !== "delivery") form.clearErrors("address");
+    if (next === "delivery") return;
+    form.setValue("address", "", { shouldValidate: false, shouldDirty: false });
+    form.clearErrors("address");
   };
 
   const taxable = Math.max(0, subtotal - (couponValid ? couponDiscount : 0));
@@ -585,32 +690,50 @@ export function CartSheet() {
                     )}
                   </div>
 
-                  <div
-                    className={cn(
-                      "mb-4 grid gap-2 rounded-full border border-border bg-secondary p-1",
-                      offeredOrderTypes.length === 3
-                        ? "grid-cols-3"
-                        : offeredOrderTypes.length === 2
-                          ? "grid-cols-2"
-                          : "grid-cols-1",
-                    )}
-                  >
-                    {offeredOrderTypes.map((t) => (
-                      <Pressable
-                        key={t.id}
-                        onPointerDown={() => setOrderType(t.id)}
-                        aria-pressed={orderType === t.id}
-                        className={cn(
-                          "min-h-11 rounded-full text-sm font-medium",
-                          orderType === t.id
-                            ? "bg-primary text-primary-foreground shadow-chip"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {t.label}
-                      </Pressable>
-                    ))}
-                  </div>
+                  {/* Fulfilment tabs. Rendered only for methods this outlet has
+                      enabled; when it has none, `orderingClosed` below explains
+                      why instead of showing tabs that could only be rejected. */}
+                  {offeredOrderTypes.length > 0 ? (
+                    <div
+                      className={cn(
+                        "mb-4 grid gap-2 rounded-full border border-border bg-secondary p-1",
+                        offeredOrderTypes.length === 3
+                          ? "grid-cols-3"
+                          : offeredOrderTypes.length === 2
+                            ? "grid-cols-2"
+                            : "grid-cols-1",
+                      )}
+                    >
+                      {offeredOrderTypes.map((t) => (
+                        <Pressable
+                          key={t.id}
+                          onPointerDown={() => handleOrderTypeSwitch(t.id)}
+                          aria-pressed={orderType === t.id}
+                          className={cn(
+                            "min-h-11 rounded-full text-sm font-medium",
+                            orderType === t.id
+                              ? "bg-primary text-primary-foreground shadow-chip"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {t.label}
+                        </Pressable>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {orderingClosed ? (
+                    <div className="mb-4 rounded-xl border border-border bg-muted/50 p-4">
+                      <p className="text-sm font-medium">
+                        Online ordering is unavailable at this outlet.
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {onlineOrderingOff
+                          ? "They have paused website orders for now. You can still order in person or by phone."
+                          : "None of the ordering options are switched on right now. Please choose another outlet or try again shortly."}
+                      </p>
+                    </div>
+                  ) : null}
 
                   {lines.length === 0 && (
                     <p className="py-10 text-center text-sm text-muted-foreground">
@@ -836,13 +959,16 @@ export function CartSheet() {
                       Sign in for faster checkout
                     </button>
                   )}
+                  {/* Blocked when the outlet has no order type enabled: the button used to
+                      stay live and the customer only discovered the problem after
+                      filling in the entire form. */}
                   <Pressable
-                    disabled={lines.length === 0 || !outletId}
+                    disabled={lines.length === 0 || !outletId || orderingClosed}
                     onClick={handleOpenCheckout}
                     className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-base font-semibold text-primary-foreground shadow-raised disabled:opacity-40"
                   >
                     <ShoppingBag className="size-5" />
-                    Continue to details
+                    {orderingClosed ? "Ordering unavailable" : "Continue to details"}
                   </Pressable>
                   <p className="mt-2 text-center text-xs text-muted-foreground">
                     Next: name, phone and delivery address
@@ -904,33 +1030,82 @@ export function CartSheet() {
                       <span className="font-semibold">{outlet?.name ?? "—"}</span>
                     </div>
 
-                    <div
-                      className={cn(
-                        "mb-4 grid gap-2 rounded-full border border-border bg-secondary p-1",
-                        offeredOrderTypes.length === 3
-                          ? "grid-cols-3"
-                          : offeredOrderTypes.length === 2
-                            ? "grid-cols-2"
-                            : "grid-cols-1",
-                      )}
-                    >
-                      {offeredOrderTypes.map((t) => (
-                        <Pressable
-                          key={t.id}
-                          type="button"
-                          onPointerDown={() => handleOrderTypeSwitch(t.id)}
-                          aria-pressed={orderType === t.id}
-                          className={cn(
-                            "min-h-11 rounded-full text-sm font-medium",
-                            orderType === t.id
-                              ? "bg-primary text-primary-foreground shadow-chip"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {t.label}
-                        </Pressable>
-                      ))}
-                    </div>
+                    {/* Website ordering switched off wholesale: the tabs still
+                        render (the methods are configured), but none of them can
+                        be used. Say so once, above the selector, rather than
+                        leaving the customer to discover it at submit time. */}
+                    {orderingClosed && !noOrderTypes ? (
+                      <div className="mb-4 rounded-xl border border-border bg-muted/50 p-4">
+                        <p className="text-sm font-medium">
+                          This outlet isn&apos;t taking online orders right now.
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          You can still order in person or by phone.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {/* Same outlet-derived list as the cart step. The two render the identical
+                        set, so a customer who arrives at the details step and
+                        sees a method missing knows it was disabled — not that the
+                        form lost an option. */}
+                    {offeredOrderTypes.length > 0 ? (
+                      <div
+                        className={cn(
+                          "mb-4 grid gap-2 rounded-full border border-border bg-secondary p-1",
+                          offeredOrderTypes.length === 3
+                            ? "grid-cols-3"
+                            : offeredOrderTypes.length === 2
+                              ? "grid-cols-2"
+                              : "grid-cols-1",
+                        )}
+                      >
+                        {offeredOrderTypes.map((t) => (
+                          <Pressable
+                            key={t.id}
+                            type="button"
+                            onPointerDown={() => handleOrderTypeSwitch(t.id)}
+                            aria-pressed={orderType === t.id}
+                            className={cn(
+                              "min-h-11 rounded-full text-sm font-medium",
+                              orderType === t.id
+                                ? "bg-primary text-primary-foreground shadow-chip"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {t.label}
+                          </Pressable>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mb-4 rounded-xl border border-border bg-muted/50 p-4">
+                        <p className="text-sm font-medium">
+                          Online ordering is unavailable at this outlet.
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {onlineOrderingOff
+                            ? "They have paused website orders for now."
+                            : "None of the ordering options are switched on right now. Please choose another outlet."}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* A stale selection can survive an outlet change or an
+                        admin disabling the method while this step was open.
+                        Say so rather than silently re-pointing the customer,
+                        which would change the fee they agreed to. */}
+                    {configKnown &&
+                    offeredOrderTypes.length > 0 &&
+                    !offeredOrderTypes.some((t) => t.id === orderType) ? (
+                      <div className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs">
+                        <p className="font-semibold text-primary">
+                          {ORDER_TYPE_LABELS[orderType]} is no longer available here.
+                        </p>
+                        <p className="mt-1 text-muted-foreground">
+                          Please choose one of the options above to continue.
+                        </p>
+                      </div>
+                    ) : null}
 
                     <div className="space-y-4">
                       <FormField
@@ -1178,15 +1353,27 @@ export function CartSheet() {
                   </div>
 
                   <div className="border-t border-border p-4">
+                    {/* `isSubmitting` already blocks double submission; the two extra
+                        conditions stop a submission that could only be refused,
+                        which is the case where the customer is looking at a
+                        closed outlet or a method that was switched off while the
+                        details step was open. */}
                     <button
                       type="submit"
-                      disabled={form.formState.isSubmitting}
+                      disabled={
+                        form.formState.isSubmitting ||
+                        orderingClosed ||
+                        !outletId ||
+                        lines.length === 0
+                      }
                       className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-base font-semibold text-primary-foreground shadow-raised disabled:opacity-50"
                     >
                       <ShoppingBag className="size-5" />
                       {form.formState.isSubmitting
                         ? "Placing order..."
-                        : `Confirm & Pay ${inr(totalView.amount)}`}
+                        : orderingClosed
+                          ? "Ordering unavailable"
+                          : `Confirm & Pay ${inr(totalView.amount)}`}
                     </button>
                     <Pressable
                       type="button"

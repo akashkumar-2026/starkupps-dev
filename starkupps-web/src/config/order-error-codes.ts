@@ -17,6 +17,22 @@
 export const OrderDomainCode = {
   OUTLET_NOT_FOUND: "OUTLET_NOT_FOUND",
   OUTLET_UNAVAILABLE: "OUTLET_UNAVAILABLE",
+  /**
+   * The outlet has switched off website ordering as a whole
+   * (`outlets.services.onlineOrdering`).
+   *
+   * Distinct from `OUTLET_UNAVAILABLE`: the outlet is open for walk-ins and POS,
+   * it has just stopped taking web orders, so switching order type will not help.
+   */
+  OUTLET_NOT_ACCEPTING_ORDERS: "OUTLET_NOT_ACCEPTING_ORDERS",
+  /**
+   * Dine-in, takeaway and delivery are *all* switched off at this outlet.
+   *
+   * Distinct from `ORDER_TYPE_UNAVAILABLE`: no individual method is
+   * misconfigured, and telling the customer their chosen method is unavailable
+   * would invite them to retry a different one that is equally unavailable.
+   */
+  NO_ORDER_TYPES_AVAILABLE: "NO_ORDER_TYPES_AVAILABLE",
   ORDER_TYPE_UNAVAILABLE: "ORDER_TYPE_UNAVAILABLE",
   DELIVERY_ADDRESS_REQUIRED: "DELIVERY_ADDRESS_REQUIRED",
   ITEM_COMING_SOON: "ITEM_COMING_SOON",

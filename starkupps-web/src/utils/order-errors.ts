@@ -34,6 +34,7 @@ export type OrderFailureKind =
   | "invalid_selection"
   | "order_type_unavailable"
   | "outlet_unavailable"
+  | "no_order_types_available"
   | "delivery_address_required"
   | "coupon_invalid"
   | "minimum_order_not_met"
@@ -75,11 +76,37 @@ function classifyByMessage(message: string): OrderFailure {
       affectsCart: true,
     };
   }
-  if (has(/^(delivery|takeaway|dine-?in) not available at this outlet/i)) {
+  // Message-level fallbacks for the two cases where no domain code arrived.
+  // Ordered most-specific first: the wholesale website-orders message is checked
+  // before the all-methods-off one, because both contain "not accepting … orders"
+  // and swapping them would point the customer at the wrong remedy.
+  if (
+    has(/not accepting online orders|stopped taking online orders/i) &&
+    !has(/choose another outlet/i)
+  ) {
+    return {
+      kind: "outlet_unavailable",
+      title: "This outlet has stopped taking online orders.",
+      hint: "You can still order in person or by phone.",
+      affectsCart: false,
+    };
+  }
+  if (has(/not accepting orders online|choose another outlet/i)) {
+    return {
+      kind: "no_order_types_available",
+      title: "This outlet isn't taking orders online at the moment.",
+      hint: "Please choose a different outlet.",
+      affectsCart: false,
+    };
+  }
+  if (
+    has(/^(delivery|takeaway|dine-?in) not available at this outlet/i) ||
+    has(/^(delivery|takeaway|dine-?in) is not available at this outlet/i)
+  ) {
     return {
       kind: "order_type_unavailable",
       title: "That order type isn't offered here.",
-      hint: "Try another option, or pick a different outlet.",
+      hint: "Pick one of the other options, or choose a different outlet.",
       affectsCart: false,
     };
   }
@@ -169,10 +196,30 @@ function classifyByCode(code: OrderDomainCode): OrderFailure {
         affectsCart: true,
       };
     case OrderDomainCode.ORDER_TYPE_UNAVAILABLE:
+      // One specific method is off. The others may well be available, so the
+      // customer is pointed at switching rather than at another outlet.
       return {
         kind: "order_type_unavailable",
         title: "That order type isn't offered here.",
-        hint: "Try another option, or pick a different outlet.",
+        hint: "Pick one of the other options, or choose a different outlet.",
+        affectsCart: false,
+      };
+    case OrderDomainCode.NO_ORDER_TYPES_AVAILABLE:
+      // Everything is off, so "try another option" would be actively misleading —
+      // there is no other option. Point at the outlet instead.
+      return {
+        kind: "no_order_types_available",
+        title: "This outlet isn't taking orders online at the moment.",
+        hint: "Please choose a different outlet.",
+        affectsCart: false,
+      };
+    case OrderDomainCode.OUTLET_NOT_ACCEPTING_ORDERS:
+      // Website ordering is off wholesale. Also open for walk-ins and POS, so
+      // the outlet exists — this is not a "try elsewhere" case.
+      return {
+        kind: "outlet_unavailable",
+        title: "This outlet has stopped taking online orders.",
+        hint: "You can still order in person or by phone.",
         affectsCart: false,
       };
     case OrderDomainCode.OUTLET_UNAVAILABLE:

@@ -11,10 +11,108 @@ import { ErrorPanel, PageLoading } from "@/components/shared/StatePanels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/utils/cn";
-import { inr, timeLabel } from "@/utils/format";
+import { dateText, inr, timeLabel } from "@/utils/format";
+import { Check, Copy, MapPin, Phone } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { type OrderStatus, modifierNames, statusMeta } from "./order-ui";
+import {
+  customerBlock,
+  fulfillmentLabel,
+  isDelivery,
+  itemCount,
+  paymentBlock,
+  pricingBreakdown,
+  splitNotes,
+  type OrderDetailRecord,
+} from "./order-detail";
+import { modifierNames, statusMeta, type OrderStatus } from "./order-ui";
+
+/**
+ * A labelled row inside one of the ticket sections.
+ *
+ * `mono` is for machine-ish values (codes, times) that should not sit in the
+ * same typographic voice as prose.
+ */
+function Field({
+  label,
+  children,
+  mono,
+}: {
+  label: string;
+  children: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#8A7D70]">
+        {label}
+      </p>
+      <div className={cn("mt-0.5 text-sm", mono && "font-mono text-xs")}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-t border-[#E7DED4] pt-4 first:border-t-0 first:pt-0">
+      <h3 className="mb-2.5 font-mono text-[9px] uppercase tracking-[0.15em] text-[#A83825]">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * Copy-to-clipboard with inline confirmation.
+ *
+ * Delivery addresses and phone numbers are the two things counter staff actually
+ * need to copy out of this ticket, and re-typing a house number from a
+ * screenshot is exactly the kind of transcription error that sends a delivery to
+ * the wrong address.
+ */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${label}`}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+        } catch {
+          // Clipboard access can be refused (insecure context, permissions).
+          // Not worth an interrupting toast — the text is selectable on screen.
+          toast.error(
+            `Could not copy the ${label}. Select it and copy manually.`
+          );
+        }
+      }}
+      className="grid size-7 shrink-0 place-items-center rounded-full border border-[#E4DCD1] bg-white text-[#8A7D70] transition-colors hover:border-[#CFC2B2] hover:text-[#211B18]"
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-[#2F6947]" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
 
 export function OrderDetailDialog({
   order,
@@ -26,7 +124,7 @@ export function OrderDetailDialog({
   onCancel,
   busy,
 }: {
-  order?: any;
+  order?: OrderDetailRecord;
   open: boolean;
   loading: boolean;
   error: string | null;
@@ -38,156 +136,358 @@ export function OrderDetailDialog({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState("");
   useEffect(() => setReason(""), [order?.id]);
+
+  if (loading)
+    return (
+      <DialogContent className="border-[#D8CDC0] bg-[#FCFAF6]">
+        <PageLoading />
+      </DialogContent>
+    );
+  if (error)
+    return (
+      <DialogContent className="border-[#D8CDC0] bg-[#FCFAF6]">
+        <ErrorPanel detail={error} retry={onClose} />
+      </DialogContent>
+    );
+  if (!order) return null;
+
+  const status = (order.status ?? "new") as OrderStatus;
+  const meta = statusMeta[status];
+  const customer = customerBlock(order);
+  const { lines, total } = pricingBreakdown(order);
+  const { customerNote, internalNote } = splitNotes(order.notes);
+  const payment = paymentBlock(order);
+  const delivery = isDelivery(order.type);
+  const items = order.items ?? [];
+  const closed = status === "completed" || status === "cancelled";
+
   return (
     <Dialog open={open} onOpenChange={next => !next && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-[#D8CDC0] bg-[#FCFAF6] sm:max-w-[520px]">
-        {loading ? (
-          <PageLoading />
-        ) : error ? (
-          <ErrorPanel detail={error} retry={onClose} />
-        ) : order ? (
-          <>
-            <DialogHeader>
-              <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#A83825]">
-                Order detail
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-[#D8CDC0] bg-[#FCFAF6] sm:max-w-[560px]">
+        <DialogHeader>
+          <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#A83825]">
+            Order detail
+          </p>
+          <DialogTitle className="text-2xl font-extrabold tracking-[-0.05em]">
+            Ticket #{order.orderNumber}
+          </DialogTitle>
+          <DialogDescription>
+            {customer.name} · {fulfillmentLabel(order.type)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* ── A. Order information ─────────────────────────────────────── */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E4DCD1] bg-[#F7F2EB] px-4 py-3">
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#8A7D70]">
+                Placed
               </p>
-              <DialogTitle className="text-2xl font-extrabold tracking-[-0.05em]">
-                Ticket #{order.orderNumber}
-              </DialogTitle>
-              <DialogDescription>
-                {order.customerName || "Walk-in guest"} ·{" "}
-                {order.type?.replace("_", " ")}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex items-center justify-between rounded-xl border border-[#E4DCD1] bg-[#F7F2EB] px-4 py-3">
-              <div>
-                <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#8A7D70]">
-                  Created
-                </p>
-                <p className="mt-1 text-sm font-extrabold">
-                  {order.createdAt ? timeLabel(new Date(order.createdAt)) : "-"}
-                </p>
-              </div>
-              <Badge
-                className={cn(
-                  "border px-2.5 py-1 text-[10px]",
-                  statusMeta[order.status as OrderStatus]?.badge
-                )}
-              >
-                {statusMeta[order.status as OrderStatus]?.label ?? order.status}
-              </Badge>
+              <p className="mt-0.5 text-sm font-extrabold">
+                {order.createdAt ? timeLabel(new Date(order.createdAt)) : "—"}
+              </p>
+              <p className="text-[11px] text-[#827568]">
+                {dateText(order.createdAt)}
+              </p>
             </div>
-            <div className="divide-y divide-[#E7DED4] border-y border-[#E7DED4]">
-              {order.items?.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="flex items-start justify-between gap-4 py-4"
+            <div className="text-right">
+              {meta ? (
+                <Badge
+                  className={cn("border px-2.5 py-1 text-[10px]", meta.badge)}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-extrabold">
-                      {item.quantity}× {item.itemName}
-                      {item.variantName ? ` — ${item.variantName}` : ""}
-                    </p>
-                    {item.variantName && (
-                      <p className="text-[11px] text-[#827568]">
+                  {meta.label}
+                </Badge>
+              ) : (
+                <Badge className="border px-2.5 py-1 text-[10px]">
+                  {order.status}
+                </Badge>
+              )}
+              {order.updatedAt && order.updatedAt !== order.createdAt ? (
+                <p className="mt-1.5 text-[10px] text-[#8A7D70]">
+                  Updated {timeLabel(new Date(order.updatedAt))}
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <Section title="Order">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Order number" mono>
+                #{order.orderNumber}
+              </Field>
+              <Field label="Fulfilment">{fulfillmentLabel(order.type)}</Field>
+              <Field label="Outlet">
+                {order.outletName ?? (
+                  <span className="text-[#8A7D70]">Not recorded</span>
+                )}
+              </Field>
+              <Field label="Source">
+                {order.source === "website"
+                  ? "Website"
+                  : (order.source ?? "Counter")}
+              </Field>
+            </div>
+          </Section>
+
+          {/* ── B. Customer information ───────────────────────────────────── */}
+          {/*
+            The phone number and address were the missing pieces: both were
+            collected at checkout (and the address was even required for
+            delivery), and `admin.orders.byId` already returned the phone — it
+            simply was never rendered. Nothing shown here can be absent without
+            an explicit "not recorded" marker, so a gap is visible rather than
+            looking like an oversight.
+          */}
+          <Section title="Customer">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Name">{customer.name}</Field>
+                <Field label="Phone">
+                  {customer.phone ? (
+                    <span className="flex items-center gap-1.5">
+                      <a
+                        href={`tel:${customer.phone}`}
+                        className="flex min-h-9 items-center gap-1.5 rounded-full border border-[#E4DCD1] bg-white px-3 font-mono text-xs font-semibold hover:border-[#CFC2B2]"
+                      >
+                        <Phone className="h-3 w-3" />
+                        {customer.phoneLabel}
+                      </a>
+                      <CopyButton
+                        value={customer.phoneLabel}
+                        label="phone number"
+                      />
+                    </span>
+                  ) : (
+                    <span className="text-[#8A7D70]">Not recorded</span>
+                  )}
+                </Field>
+              </div>
+              {customer.email ? (
+                <Field label="Email">
+                  <span className="flex items-center gap-1.5">
+                    <span className="min-w-0 break-all">{customer.email}</span>
+                    <CopyButton value={customer.email} label="email" />
+                  </span>
+                </Field>
+              ) : null}
+
+              {/* Only for delivery. A takeaway ticket showing a stale address
+                  is worse than showing none. */}
+              {delivery ? (
+                <Field label="Delivery address">
+                  {customer.address ? (
+                    <span className="flex items-start gap-1.5">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8A7D70]" />
+                      <span className="min-w-0 flex-1 break-words leading-5">
+                        {customer.address}
+                      </span>
+                      <CopyButton
+                        value={customer.address}
+                        label="delivery address"
+                      />
+                    </span>
+                  ) : (
+                    <span className="text-[#9A3627]">
+                      Not recorded — this order predates address storage, so the
+                      customer will need to be asked where to deliver.
+                    </span>
+                  )}
+                </Field>
+              ) : null}
+            </div>
+          </Section>
+
+          {/* ── C. Order items ───────────────────────────────────────────── */}
+          <Section
+            title={`Items${itemCount(items) ? ` · ${itemCount(items)}` : ""}`}
+          >
+            {items.length === 0 ? (
+              <p className="text-xs text-[#8A7D70]">No items recorded.</p>
+            ) : (
+              <div className="divide-y divide-[#E7DED4]">
+                {items.map(item => (
+                  <div
+                    key={item.id}
+                    className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-extrabold">
+                        {item.quantity}× {item.itemName}
+                        {item.variantName ? ` — ${item.variantName}` : ""}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[#827568]">
                         {item.variantQuantity
                           ? `${item.variantQuantity} ${item.variantUnit ?? ""}`.trim()
                           : ""}
                         {item.sku ? ` · SKU ${item.sku}` : ""}
-                        {item.unitPrice
+                        {item.unitPrice != null
                           ? ` · ${inr(Number(item.unitPrice))} each`
                           : ""}
                       </p>
-                    )}
-                    {modifierNames(item).length ? (
-                      <p className="text-[11px] text-[#5A4E45]">
-                        + {modifierNames(item).join(", ")}
-                      </p>
-                    ) : null}
+                      {modifierNames(item).length ? (
+                        <p className="mt-0.5 text-[11px] text-[#5A4E45]">
+                          + {modifierNames(item).join(", ")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 font-mono text-xs font-semibold">
+                      {inr(Number(item.lineTotal ?? 0))}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs font-semibold shrink-0">
-                    {inr(Number(item.lineTotal))}
-                  </span>
-                </div>
-              ))}
-            </div>
-            {order.notes && (
-              <div className="rounded-xl border border-[#F0D5B2] bg-[#FFF8E8] p-4">
-                <p className="text-sm font-semibold leading-5 text-[#634A27]">
-                  {order.notes}
-                </p>
+                ))}
               </div>
             )}
-            <div className="flex items-end justify-between">
-              <span className="text-sm font-bold text-[#73675B]">
-                Order total
-              </span>
-              <span className="text-2xl font-extrabold tracking-[-0.05em]">
-                {inr(Number(order.total))}
-              </span>
-            </div>
-            <DialogFooter className="flex-col gap-2 sm:flex-row">
-              {statusMeta[order.status as OrderStatus]?.next && (
-                <Button
-                  disabled={busy}
-                  className="bg-[#211B18] text-white"
-                  onClick={() =>
-                    onAdvance(
-                      statusMeta[order.status as OrderStatus].next!.status
-                    )
-                  }
+          </Section>
+
+          {/* ── D. Notes ─────────────────────────────────────────────────── */}
+          {customerNote || internalNote ? (
+            <Section title="Notes">
+              <div className="space-y-2">
+                {customerNote ? (
+                  <div className="rounded-xl border border-[#F0D5B2] bg-[#FFF8E8] p-3">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#8A5D10]">
+                      Customer note
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm font-semibold leading-5 text-[#634A27]">
+                      {customerNote}
+                    </p>
+                  </div>
+                ) : null}
+                {internalNote ? (
+                  <div className="rounded-xl border border-[#E4DCD1] bg-[#F7F2EB] p-3">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#8A7D70]">
+                      Internal · cancellation
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-[#5A4E45]">
+                      {internalNote}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </Section>
+          ) : null}
+
+          {/* ── E. Pricing ───────────────────────────────────────────────── */}
+          <Section title="Payment summary">
+            <dl className="space-y-1.5">
+              {lines.map(line => (
+                <div
+                  key={line.label}
+                  className={cn(
+                    "flex items-baseline justify-between gap-4 text-sm",
+                    line.muted && "text-[#827568]"
+                  )}
                 >
-                  {statusMeta[order.status as OrderStatus].next!.label}
-                </Button>
-              )}
-              {order.status !== "completed" && order.status !== "cancelled" && (
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => setCancelOpen(true)}
+                  <dt className={cn(line.muted && "text-[11px]")}>
+                    {line.label}
+                  </dt>
+                  <dd className="shrink-0 font-mono tabular-nums">
+                    {inr(line.value)}
+                  </dd>
+                </div>
+              ))}
+              <div className="flex items-end justify-between gap-4 border-t border-[#E7DED4] pt-2.5">
+                <dt className="text-sm font-bold text-[#73675B]">
+                  Order total
+                </dt>
+                <dd className="text-2xl font-extrabold tracking-[-0.05em]">
+                  {inr(total)}
+                </dd>
+              </div>
+            </dl>
+          </Section>
+
+          {/* ── F. Payment ───────────────────────────────────────────────── */}
+          {payment ? (
+            <Section title="Payment">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm">{payment.method}</span>
+                <Badge
+                  className={cn(
+                    "border px-2.5 py-1 text-[10px]",
+                    payment.tone === "ok"
+                      ? "border-[#BDE0C8] bg-[#E5F2E9] text-[#2F6947]"
+                      : payment.tone === "failed"
+                        ? "border-[#F1C9BD] bg-[#FFF0EA] text-[#9A3627]"
+                        : "border-[#EFD79B] bg-[#FBF0D5] text-[#8A5D10]"
+                  )}
                 >
-                  Cancel order
-                </Button>
+                  {payment.status}
+                </Badge>
+              </div>
+              {payment.paid ? null : (
+                <p className="mt-1.5 text-[11px] text-[#8A7D70]">
+                  {payment.status === "failed"
+                    ? "Payment failed — do not treat this ticket as settled."
+                    : "Not yet paid. Placing an order does not collect payment."}
+                </p>
               )}
-              <Button variant="outline" onClick={onClose}>
-                Close
+            </Section>
+          ) : null}
+        </div>
+
+        {/* ── G. Actions ────────────────────────────────────────────────── */}
+        <DialogFooter className="mt-5 flex-col gap-2 sm:flex-row">
+          {/*
+            Only actions legal from the current status are offered. The server
+            enforces the same rules (`canTransitionOrderStatus`), so this is a
+            usability measure rather than the control — but hiding an illegal
+            button is what stops staff discovering the limit by clicking it.
+          */}
+          {statusMeta[status]?.next ? (
+            <Button
+              disabled={busy}
+              className="bg-[#211B18] text-white"
+              onClick={() => onAdvance(statusMeta[status].next!.status)}
+            >
+              {statusMeta[status].next!.label}
+            </Button>
+          ) : null}
+          {!closed ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setCancelOpen(true)}
+            >
+              Cancel order
+            </Button>
+          ) : null}
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+
+        <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+          <DialogContent className="border-[#D8CDC0] bg-[#FCFAF6]">
+            <DialogHeader>
+              <DialogTitle>Cancel ticket #{order.orderNumber}</DialogTitle>
+              <DialogDescription>
+                Provide a reason for cancellation. It is recorded as an internal
+                note, separate from the customer&apos;s own note.
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Reason (min 3 characters)"
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCancelOpen(false)}>
+                Keep ticket
+              </Button>
+              <Button
+                disabled={busy || reason.trim().length < 3}
+                className="bg-[#B83D29] text-white hover:bg-[#962C20]"
+                onClick={() => {
+                  onCancel(reason.trim());
+                  setCancelOpen(false);
+                }}
+              >
+                Confirm cancel
               </Button>
             </DialogFooter>
-            <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-              <DialogContent className="border-[#D8CDC0] bg-[#FCFAF6]">
-                <DialogHeader>
-                  <DialogTitle>Cancel ticket #{order.orderNumber}</DialogTitle>
-                  <DialogDescription>
-                    Provide a reason for cancellation.
-                  </DialogDescription>
-                </DialogHeader>
-                <Textarea
-                  value={reason}
-                  onChange={e => setReason(e.target.value)}
-                  placeholder="Reason (min 3 characters)"
-                />
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setCancelOpen(false)}
-                  >
-                    Keep ticket
-                  </Button>
-                  <Button
-                    disabled={busy || reason.trim().length < 3}
-                    className="bg-[#B83D29] hover:bg-[#962C20] text-white"
-                    onClick={() => {
-                      onCancel(reason.trim());
-                      setCancelOpen(false);
-                    }}
-                  >
-                    Confirm cancel
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </>
-        ) : null}
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

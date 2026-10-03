@@ -23,6 +23,7 @@ import { useLocation } from "wouter";
 
 import { OrderDetailDialog } from "./OrderDetailDialog";
 import { OrderIntakeDialog } from "./OrderIntakeDialog";
+import { fulfillmentLabel } from "./order-detail";
 import { type OrderStatus, orderStatuses, statusMeta } from "./order-ui";
 
 export default function OrdersPage({ detailId }: { detailId?: number }) {
@@ -226,12 +227,31 @@ function LegacyOrdersPage({ detailId }: { detailId?: number }) {
                 key={order.id}
                 className="flex items-center justify-between gap-3 px-5 py-4"
               >
-                <div>
-                  <p className="text-sm font-extrabold">
+                {/*
+                    Fulfilment and phone are on the row rather than behind the
+                    dialog: the counter has to triage a delivery (it leaves the
+                    building) separately from a takeaway (the customer waits),
+                    and both need a number to call. Opening each ticket to learn
+                    that was the previous workflow.
+                  */}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold">
                     #{order.orderNumber} — {order.customerName || "Walk-in"}
                   </p>
-                  <p className="text-xs text-[#827568]">
-                    {order.status} · {inr(order.total)}
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[#827568]">
+                    <span>{fulfillmentLabel(order.type)}</span>
+                    <span aria-hidden>·</span>
+                    <span className="capitalize">{order.status}</span>
+                    <span aria-hidden>·</span>
+                    <span className="tabular-nums">{inr(order.total)}</span>
+                    {order.customerPhone ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span className="font-mono text-[11px]">
+                          {order.customerPhone}
+                        </span>
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 <div className="flex gap-2">
