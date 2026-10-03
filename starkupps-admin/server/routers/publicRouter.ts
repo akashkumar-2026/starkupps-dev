@@ -12,6 +12,7 @@ import { clientThrottleKey } from "../auth/client-ip";
 import { escapePostgrestOr, normalizeSelectedModifiers } from "../db/index";
 import { publicProcedure, router } from "../lib/trpc";
 import { resolveInstagramThumbnail } from "../lib/instagram-thumbnails";
+import { reverseGeocode } from "../lib/geocode";
 import { getSql, getSupabaseAdmin } from "../db/supabase";
 import { parseOutletServices } from "@shared/outletServices";
 import { evaluateFulfillment } from "@shared/fulfillment";
@@ -1402,6 +1403,54 @@ export const publicRouter = router({
         };
       }),
   }),
+
+  /**
+   * Reverse-geocodes device coordinates into a delivery address.
+   *
+   * Backs the storefront's "use my current location" button. Returns a
+   * *suggestion*, not a decision: the customer can and should edit it, because
+   * geolocation is routinely imprecise in Indian towns and a reverse-geocoded
+   * line will often name the wrong house, lane or landmark even when the
+   * coordinates are right.
+   *
+   * Public because the storefront is unauthenticated, and rate-limited because
+   * it is an unauthenticated route to an external paid-for resource.
+   */
+  geocode: publicProcedure
+    .input(
+      z.object({
+        lat: z.number().min(-90).max(90),
+        lon: z.number().min(-180).max(180),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // A tighter budget than the generic public write limit: each call can cost
+      // an upstream request, so the blast radius of an unauthenticated caller
+      // has to be small.
+      const limited = await consume(
+        `public:geocode:${clientThrottleKey(ctx.req, "geocode")}`,
+        { max: 10, windowMs: 15 * 60 * 1000 }
+      );
+      if (!limited.allowed) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message:
+            "We've hit the location lookup limit for now. Please type your address instead.",
+        });
+      }
+      try {
+        return await reverseGeocode(input.lat, input.lon);
+      } catch {
+        // Deliberately vague. The customer only needs to know it did not work
+        // and that typing is still fine; upstream status codes and provider URLs
+        // are not theirs to debug.
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "We couldn't look up that location. Please type your address instead.",
+        });
+      }
+    }),
 
   // ── Orders: public creation (server-authoritative pricing) ──
   orders: router({
