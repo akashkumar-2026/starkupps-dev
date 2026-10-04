@@ -1,13 +1,6 @@
 import { inr } from "@/utils/format";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -524,7 +517,8 @@ function CouponCreateDialog({
     return "Free Delivery";
   }, [form.discountType, form.discountValue, form.maximumDiscount]);
 
-  const submit = () => {
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (!form.name.trim() || !form.code.trim())
       return toast.error("Name and code required");
     if (form.discountType !== "free_delivery" && !form.discountValue)
@@ -574,16 +568,25 @@ function CouponCreateDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto bg-[#FCFAF6] sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Create Coupon</DialogTitle>
-          <DialogDescription>
-            Centralized promotion eligibility — who, where, what, when, how
-            many, how much.
-          </DialogDescription>
-        </DialogHeader>
-
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="3xl"
+      title="Create Coupon"
+      description="Centralized promotion eligibility — who, where, what, when, how many, how much."
+      onSubmit={submit}
+      submitLabel={
+        create.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          "Create Coupon"
+        )
+      }
+      submitPending={create.isPending}
+      isDirty={form.name.trim() !== "" || form.code.trim() !== ""}
+      formClassName="space-y-6"
+    >
+      <div className="space-y-6">
         {/* Preview */}
         <div className="rounded-xl border border-[#E4DCD1] bg-white p-4">
           <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8B7E71]">
@@ -602,430 +605,400 @@ function CouponCreateDialog({
           </p>
         </div>
 
-        <div className="space-y-6">
-          <section>
-            <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Basic Information
-            </h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Coupon Name *</span>
-                <Input
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="Welcome Offer"
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Coupon Code *</span>
-                <Input
-                  value={form.code}
-                  onChange={e =>
-                    setForm({ ...form, code: e.target.value.toUpperCase() })
-                  }
-                  placeholder="WELCOME50"
-                  className="bg-white"
-                />
-              </label>
-              <label className="col-span-2 space-y-1">
-                <span className="text-xs font-bold">Description</span>
-                <Textarea
-                  value={form.description}
-                  onChange={e =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                  placeholder="50% off for first-time customers."
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Status</span>
-                <Select
-                  value={form.status}
-                  onValueChange={v => setForm({ ...form, status: v })}
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="scheduled">Scheduled</SelectItem>
-                    <SelectItem value="paused">Paused</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-          </section>
-
-          <section>
-            <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Discount
-            </h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Discount Type</span>
-                <Select
-                  value={form.discountType}
-                  onValueChange={v => setForm({ ...form, discountType: v })}
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="percentage">
-                      Percentage Discount
-                    </SelectItem>
-                    <SelectItem value="fixed">Fixed Amount</SelectItem>
-                    <SelectItem value="free_delivery">Free Delivery</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Discount Value *</span>
-                <Input
-                  type="number"
-                  value={form.discountValue}
-                  onChange={e =>
-                    setForm({ ...form, discountValue: e.target.value })
-                  }
-                  placeholder="20"
-                  className="bg-white"
-                />
-              </label>
-              {form.discountType === "percentage" && (
-                <label className="space-y-1">
-                  <span className="text-xs font-bold">
-                    Maximum Discount (₹)
-                  </span>
-                  <Input
-                    type="number"
-                    value={form.maximumDiscount}
-                    onChange={e =>
-                      setForm({ ...form, maximumDiscount: e.target.value })
-                    }
-                    placeholder="100"
-                    className="bg-white"
-                  />
-                </label>
-              )}
-              <label className="space-y-1">
-                <span className="text-xs font-bold">
-                  Minimum Order Value (₹)
-                </span>
-                <Input
-                  type="number"
-                  value={form.minimumOrder}
-                  onChange={e =>
-                    setForm({ ...form, minimumOrder: e.target.value })
-                  }
-                  placeholder="299"
-                  className="bg-white"
-                />
-              </label>
-            </div>
-          </section>
-
-          <section>
-            <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Eligibility
-            </h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Customers</span>
-                <Select
-                  value={form.customerEligibility}
-                  onValueChange={v =>
-                    setForm({ ...form, customerEligibility: v })
-                  }
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Customers</SelectItem>
-                    <SelectItem value="new">
-                      New Customers (0 orders)
-                    </SelectItem>
-                    <SelectItem value="returning">
-                      Returning (1+ orders)
-                    </SelectItem>
-                    <SelectItem value="vip">VIP</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Outlet Targeting</span>
-                <div className="rounded-md border border-[#DCCFC2] bg-white p-2 max-h-28 overflow-y-auto">
-                  {outlets.data?.items.map((o: any) => (
-                    <label
-                      key={o.id}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.applicableOutlets.includes(o.id)}
-                        onChange={e =>
-                          setForm({
-                            ...form,
-                            applicableOutlets: e.target.checked
-                              ? [...form.applicableOutlets, o.id]
-                              : form.applicableOutlets.filter(
-                                  (id: number) => id !== o.id
-                                ),
-                          })
-                        }
-                      />
-                      {o.name} — {o.code}
-                    </label>
-                  )) ?? (
-                    <span className="text-xs text-[#8B7E71]">
-                      All outlets if none selected
-                    </span>
-                  )}
-                </div>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Order Types</span>
-                <div className="flex gap-2 text-xs">
-                  <label className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={form.orderTypes.includes("delivery")}
-                      onChange={e =>
-                        setForm({
-                          ...form,
-                          orderTypes: e.target.checked
-                            ? [...form.orderTypes, "delivery"]
-                            : form.orderTypes.filter(
-                                (v: string) => v !== "delivery"
-                              ),
-                        })
-                      }
-                    />
-                    Delivery
-                  </label>
-                  <label className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={form.orderTypes.includes("takeaway")}
-                      onChange={e =>
-                        setForm({
-                          ...form,
-                          orderTypes: e.target.checked
-                            ? [...form.orderTypes, "takeaway"]
-                            : form.orderTypes.filter(
-                                (v: string) => v !== "takeaway"
-                              ),
-                        })
-                      }
-                    />
-                    Takeaway
-                  </label>
-                  <label className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={form.orderTypes.includes("dine_in")}
-                      onChange={e =>
-                        setForm({
-                          ...form,
-                          orderTypes: e.target.checked
-                            ? [...form.orderTypes, "dine_in"]
-                            : form.orderTypes.filter(
-                                (v: string) => v !== "dine_in"
-                              ),
-                        })
-                      }
-                    />
-                    Dine-in
-                  </label>
-                </div>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Payment Methods</span>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {["cash", "upi", "card", "online"].map(pm => (
-                    <label key={pm} className="flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={form.paymentMethods.includes(pm)}
-                        onChange={e =>
-                          setForm({
-                            ...form,
-                            paymentMethods: e.target.checked
-                              ? [...form.paymentMethods, pm]
-                              : form.paymentMethods.filter(
-                                  (v: string) => v !== pm
-                                ),
-                          })
-                        }
-                      />
-                      {pm}
-                    </label>
-                  ))}
-                </div>
-              </label>
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Include Products</span>
-                <div className="rounded-md border bg-white p-2 max-h-24 overflow-y-auto text-xs">
-                  {menu.data?.items.slice(0, 50).map((p: any) => (
-                    <label key={p.id} className="flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={form.applicableProducts.includes(p.id)}
-                        onChange={e =>
-                          setForm({
-                            ...form,
-                            applicableProducts: e.target.checked
-                              ? [...form.applicableProducts, p.id]
-                              : form.applicableProducts.filter(
-                                  (id: number) => id !== p.id
-                                ),
-                          })
-                        }
-                      />
-                      {p.name}
-                    </label>
-                  ))}
-                </div>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Exclude Products</span>
-                <div className="rounded-md border bg-white p-2 max-h-24 overflow-y-auto text-xs">
-                  {menu.data?.items.slice(0, 50).map((p: any) => (
-                    <label key={p.id} className="flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={form.excludeProducts.includes(p.id)}
-                        onChange={e =>
-                          setForm({
-                            ...form,
-                            excludeProducts: e.target.checked
-                              ? [...form.excludeProducts, p.id]
-                              : form.excludeProducts.filter(
-                                  (id: number) => id !== p.id
-                                ),
-                          })
-                        }
-                      />
-                      {p.name}
-                    </label>
-                  ))}
-                </div>
-              </label>
-            </div>
-          </section>
-
-          <section>
-            <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Usage
-            </h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Total Usage Limit</span>
-                <Input
-                  type="number"
-                  value={form.usageLimit}
-                  onChange={e =>
-                    setForm({ ...form, usageLimit: e.target.value })
-                  }
-                  placeholder="1000"
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Per Customer Limit</span>
-                <Input
-                  type="number"
-                  value={form.perCustomerLimit}
-                  onChange={e =>
-                    setForm({ ...form, perCustomerLimit: e.target.value })
-                  }
-                  placeholder="1"
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Priority</span>
-                <Input
-                  type="number"
-                  value={form.priority}
-                  onChange={e => setForm({ ...form, priority: e.target.value })}
-                  placeholder="0"
-                  className="bg-white"
-                />
-              </label>
-            </div>
-            <label className="mt-3 flex items-center gap-2 text-xs font-bold">
-              <input
-                type="checkbox"
-                checked={form.allowStacking}
-                onChange={e =>
-                  setForm({ ...form, allowStacking: e.target.checked })
-                }
+        <section>
+          <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+            Basic Information
+          </h4>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Coupon Name *</span>
+              <Input
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                placeholder="Welcome Offer"
+                className="bg-white"
               />
-              Allow stacking with other coupons
             </label>
-          </section>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Coupon Code *</span>
+              <Input
+                value={form.code}
+                onChange={e =>
+                  setForm({ ...form, code: e.target.value.toUpperCase() })
+                }
+                placeholder="WELCOME50"
+                className="bg-white"
+              />
+            </label>
+            <label className="col-span-2 space-y-1">
+              <span className="text-xs font-bold">Description</span>
+              <Textarea
+                value={form.description}
+                onChange={e =>
+                  setForm({ ...form, description: e.target.value })
+                }
+                placeholder="50% off for first-time customers."
+                className="bg-white"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Status</span>
+              <Select
+                value={form.status}
+                onValueChange={v => setForm({ ...form, status: v })}
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="scheduled">Scheduled</SelectItem>
+                  <SelectItem value="paused">Paused</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
+        </section>
 
-          <section>
-            <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Validity
-            </h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <section>
+          <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+            Discount
+          </h4>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Discount Type</span>
+              <Select
+                value={form.discountType}
+                onValueChange={v => setForm({ ...form, discountType: v })}
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percentage">
+                    Percentage Discount
+                  </SelectItem>
+                  <SelectItem value="fixed">Fixed Amount</SelectItem>
+                  <SelectItem value="free_delivery">Free Delivery</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Discount Value *</span>
+              <Input
+                type="number"
+                value={form.discountValue}
+                onChange={e =>
+                  setForm({ ...form, discountValue: e.target.value })
+                }
+                placeholder="20"
+                className="bg-white"
+              />
+            </label>
+            {form.discountType === "percentage" && (
               <label className="space-y-1">
-                <span className="text-xs font-bold">Start Date</span>
+                <span className="text-xs font-bold">Maximum Discount (₹)</span>
                 <Input
-                  type="datetime-local"
-                  value={form.startAt}
-                  onChange={e => setForm({ ...form, startAt: e.target.value })}
+                  type="number"
+                  value={form.maximumDiscount}
+                  onChange={e =>
+                    setForm({ ...form, maximumDiscount: e.target.value })
+                  }
+                  placeholder="100"
                   className="bg-white"
                 />
               </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">End Date</span>
-                <Input
-                  type="datetime-local"
-                  value={form.endAt}
-                  onChange={e => setForm({ ...form, endAt: e.target.value })}
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Timezone</span>
-                <Input
-                  value={form.timezone}
-                  onChange={e => setForm({ ...form, timezone: e.target.value })}
-                  placeholder="Asia/Kolkata"
-                  className="bg-white"
-                />
-              </label>
-            </div>
-          </section>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={create.isPending}
-            className="bg-[#211B18] text-white"
-          >
-            {create.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Create Coupon"
             )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Minimum Order Value (₹)</span>
+              <Input
+                type="number"
+                value={form.minimumOrder}
+                onChange={e =>
+                  setForm({ ...form, minimumOrder: e.target.value })
+                }
+                placeholder="299"
+                className="bg-white"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section>
+          <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+            Eligibility
+          </h4>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Customers</span>
+              <Select
+                value={form.customerEligibility}
+                onValueChange={v =>
+                  setForm({ ...form, customerEligibility: v })
+                }
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Customers</SelectItem>
+                  <SelectItem value="new">New Customers (0 orders)</SelectItem>
+                  <SelectItem value="returning">
+                    Returning (1+ orders)
+                  </SelectItem>
+                  <SelectItem value="vip">VIP</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Outlet Targeting</span>
+              <div className="scrollbar-none rounded-md border border-[#DCCFC2] bg-white p-2 max-h-28 overflow-y-auto">
+                {outlets.data?.items.map((o: any) => (
+                  <label key={o.id} className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={form.applicableOutlets.includes(o.id)}
+                      onChange={e =>
+                        setForm({
+                          ...form,
+                          applicableOutlets: e.target.checked
+                            ? [...form.applicableOutlets, o.id]
+                            : form.applicableOutlets.filter(
+                                (id: number) => id !== o.id
+                              ),
+                        })
+                      }
+                    />
+                    {o.name} — {o.code}
+                  </label>
+                )) ?? (
+                  <span className="text-xs text-[#8B7E71]">
+                    All outlets if none selected
+                  </span>
+                )}
+              </div>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Order Types</span>
+              <div className="flex gap-2 text-xs">
+                <label className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={form.orderTypes.includes("delivery")}
+                    onChange={e =>
+                      setForm({
+                        ...form,
+                        orderTypes: e.target.checked
+                          ? [...form.orderTypes, "delivery"]
+                          : form.orderTypes.filter(
+                              (v: string) => v !== "delivery"
+                            ),
+                      })
+                    }
+                  />
+                  Delivery
+                </label>
+                <label className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={form.orderTypes.includes("takeaway")}
+                    onChange={e =>
+                      setForm({
+                        ...form,
+                        orderTypes: e.target.checked
+                          ? [...form.orderTypes, "takeaway"]
+                          : form.orderTypes.filter(
+                              (v: string) => v !== "takeaway"
+                            ),
+                      })
+                    }
+                  />
+                  Takeaway
+                </label>
+                <label className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={form.orderTypes.includes("dine_in")}
+                    onChange={e =>
+                      setForm({
+                        ...form,
+                        orderTypes: e.target.checked
+                          ? [...form.orderTypes, "dine_in"]
+                          : form.orderTypes.filter(
+                              (v: string) => v !== "dine_in"
+                            ),
+                      })
+                    }
+                  />
+                  Dine-in
+                </label>
+              </div>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Payment Methods</span>
+              <div className="flex flex-wrap gap-2 text-xs">
+                {["cash", "upi", "card", "online"].map(pm => (
+                  <label key={pm} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={form.paymentMethods.includes(pm)}
+                      onChange={e =>
+                        setForm({
+                          ...form,
+                          paymentMethods: e.target.checked
+                            ? [...form.paymentMethods, pm]
+                            : form.paymentMethods.filter(
+                                (v: string) => v !== pm
+                              ),
+                        })
+                      }
+                    />
+                    {pm}
+                  </label>
+                ))}
+              </div>
+            </label>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Include Products</span>
+              <div className="scrollbar-none rounded-md border bg-white p-2 max-h-24 overflow-y-auto text-xs">
+                {menu.data?.items.slice(0, 50).map((p: any) => (
+                  <label key={p.id} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={form.applicableProducts.includes(p.id)}
+                      onChange={e =>
+                        setForm({
+                          ...form,
+                          applicableProducts: e.target.checked
+                            ? [...form.applicableProducts, p.id]
+                            : form.applicableProducts.filter(
+                                (id: number) => id !== p.id
+                              ),
+                        })
+                      }
+                    />
+                    {p.name}
+                  </label>
+                ))}
+              </div>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Exclude Products</span>
+              <div className="scrollbar-none rounded-md border bg-white p-2 max-h-24 overflow-y-auto text-xs">
+                {menu.data?.items.slice(0, 50).map((p: any) => (
+                  <label key={p.id} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={form.excludeProducts.includes(p.id)}
+                      onChange={e =>
+                        setForm({
+                          ...form,
+                          excludeProducts: e.target.checked
+                            ? [...form.excludeProducts, p.id]
+                            : form.excludeProducts.filter(
+                                (id: number) => id !== p.id
+                              ),
+                        })
+                      }
+                    />
+                    {p.name}
+                  </label>
+                ))}
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section>
+          <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+            Usage
+          </h4>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Total Usage Limit</span>
+              <Input
+                type="number"
+                value={form.usageLimit}
+                onChange={e => setForm({ ...form, usageLimit: e.target.value })}
+                placeholder="1000"
+                className="bg-white"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Per Customer Limit</span>
+              <Input
+                type="number"
+                value={form.perCustomerLimit}
+                onChange={e =>
+                  setForm({ ...form, perCustomerLimit: e.target.value })
+                }
+                placeholder="1"
+                className="bg-white"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Priority</span>
+              <Input
+                type="number"
+                value={form.priority}
+                onChange={e => setForm({ ...form, priority: e.target.value })}
+                placeholder="0"
+                className="bg-white"
+              />
+            </label>
+          </div>
+          <label className="mt-3 flex items-center gap-2 text-xs font-bold">
+            <input
+              type="checkbox"
+              checked={form.allowStacking}
+              onChange={e =>
+                setForm({ ...form, allowStacking: e.target.checked })
+              }
+            />
+            Allow stacking with other coupons
+          </label>
+        </section>
+
+        <section>
+          <h4 className="border-b border-[#E7DED4] pb-2 text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+            Validity
+          </h4>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Start Date</span>
+              <Input
+                type="datetime-local"
+                value={form.startAt}
+                onChange={e => setForm({ ...form, startAt: e.target.value })}
+                className="bg-white"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">End Date</span>
+              <Input
+                type="datetime-local"
+                value={form.endAt}
+                onChange={e => setForm({ ...form, endAt: e.target.value })}
+                className="bg-white"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold">Timezone</span>
+              <Input
+                value={form.timezone}
+                onChange={e => setForm({ ...form, timezone: e.target.value })}
+                placeholder="Asia/Kolkata"
+                className="bg-white"
+              />
+            </label>
+          </div>
+        </section>
+      </div>
+    </FormDialog>
   );
 }
 

@@ -1,14 +1,7 @@
 import { trpc } from "@/api/trpc";
 import { FormField } from "@/components/shared/FormField";
+import { FormDialog } from "@/components/shared/dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -22,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/utils/cn";
 import { apiError } from "@/utils/errors";
 import { Image as ImageIcon, Loader2, Upload } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const UNIT_OPTIONS = [
@@ -78,9 +71,20 @@ export function MenuItemDialog({
       isDefault: boolean;
     }>
   >([]);
+  /*
+   * The seeded state doubles as the dirty baseline.
+   *
+   * It is captured on every reset so Escape can be blocked while the form holds
+   * work the user would not get back. `defaultCategoryId` is a primitive on
+   * purpose: this effect used to depend on the `categories` array itself, whose
+   * identity changes on every background refetch, so a refetch could wipe a
+   * half-typed item.
+   */
+  const defaultCategoryId = categories[0] ? String(categories[0].id) : "";
+  const baseline = useRef("");
   useEffect(() => {
     if (current) {
-      setForm({
+      const next = {
         categoryId: String(current.categoryId),
         name: current.name,
         description: current.description || "",
@@ -88,7 +92,7 @@ export function MenuItemDialog({
         available: current.available,
         comingSoon: Boolean(current.comingSoon),
         imageUrl: current.imageUrl || "",
-      });
+      };
       const vs = (current.variants ?? []).map((v: any) => ({
         id: v.id,
         name: v.name,
@@ -99,20 +103,24 @@ export function MenuItemDialog({
         available: Boolean(v.available),
         isDefault: Boolean(v.isDefault),
       }));
+      setForm(next);
       setVariants(vs);
+      baseline.current = JSON.stringify([next, vs]);
     } else {
-      setForm({
-        categoryId: categories[0] ? String(categories[0].id) : "",
+      const next = {
+        categoryId: defaultCategoryId,
         name: "",
         description: "",
         veg: true,
         available: true,
         comingSoon: false,
         imageUrl: "",
-      });
+      };
+      setForm(next);
       setVariants([]);
+      baseline.current = JSON.stringify([next, []]);
     }
-  }, [current, open, categories]);
+  }, [current, open, defaultCategoryId]);
   const addVariant = () => {
     const baseName =
       variants.length === 0
@@ -280,396 +288,385 @@ export function MenuItemDialog({
     }
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-[#D8CDC0] bg-[#FCFAF6] sm:max-w-[640px]">
-        <DialogHeader>
-          <DialogTitle>
-            {current ? "Edit menu item" : "New menu item"}
-          </DialogTitle>
-          <DialogDescription className="leading-5">
-            Each product is sold by its sizes — e.g.{" "}
-            <span className="font-semibold text-[#211B18]">
-              Cappuccino Regular 180 ml ₹140
-            </span>{" "}
-            · Medium 250 ml ₹180 · Large 350 ml ₹220. Add at least one size.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-5">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8B7E71]">
-              Basic information
-            </p>
-            <div className="mt-3 grid gap-3">
-              <FormField label="Category">
-                <Select
-                  value={form.categoryId}
-                  onValueChange={v => setForm({ ...form, categoryId: v })}
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="2xl"
+      title={current ? "Edit menu item" : "New menu item"}
+      description={
+        <>
+          Each product is sold by its sizes — e.g.{" "}
+          <span className="font-semibold text-[#211B18]">
+            Cappuccino Regular 180 ml ₹140
+          </span>{" "}
+          · Medium 250 ml ₹180 · Large 350 ml ₹220. Add at least one size.
+        </>
+      }
+      onSubmit={event => {
+        event.preventDefault();
+        submit();
+      }}
+      submitLabel="Save"
+      submitPending={create.isPending || update.isPending}
+      isDirty={baseline.current !== JSON.stringify([form, variants])}
+      formClassName="grid gap-5"
+    >
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8B7E71]">
+          Basic information
+        </p>
+        <div className="mt-3 grid gap-3">
+          <FormField label="Category">
+            <Select
+              value={form.categoryId}
+              onValueChange={v => setForm({ ...form, categoryId: v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c: any) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+          <FormField label="Name">
+            <Input
+              value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })}
+              maxLength={160}
+              placeholder="e.g. Cappuccino"
+              className="bg-white"
+            />
+          </FormField>
+          <FormField label="Description">
+            <Textarea
+              value={form.description}
+              onChange={e => setForm({ ...form, description: e.target.value })}
+              maxLength={1000}
+              placeholder="Short description (optional)"
+              className="bg-white"
+            />
+          </FormField>
+          <FormField label="Product image">
+            <div className="grid gap-3">
+              <Input
+                value={form.imageUrl}
+                onChange={e => setForm({ ...form, imageUrl: e.target.value })}
+                placeholder="Paste image URL — https://..."
+                className="bg-white"
+              />
+              <div className="flex flex-col gap-3 rounded-xl border border-dashed border-[#D5C8BA] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F8F4EE] text-[#8E8174]">
+                    <ImageIcon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-[#211B18]">
+                      Upload to CDN
+                    </p>
+                    <p className="text-[11px] text-[#8B7E71]">
+                      5 MB max · product-images bucket
+                    </p>
+                  </div>
+                </div>
+                <label
+                  className={cn(
+                    "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border bg-white px-3 text-xs font-bold shadow-sm hover:bg-[#FCFAF6]",
+                    doUpload.isPending
+                      ? "pointer-events-none opacity-60 border-[#D8CDC0]"
+                      : "border-[#D8CDC0]"
+                  )}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label="Name">
-                <Input
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  maxLength={160}
-                  placeholder="e.g. Cappuccino"
-                  className="bg-white"
-                />
-              </FormField>
-              <FormField label="Description">
-                <Textarea
-                  value={form.description}
-                  onChange={e =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                  maxLength={1000}
-                  placeholder="Short description (optional)"
-                  className="bg-white"
-                />
-              </FormField>
-              <FormField label="Product image">
-                <div className="grid gap-3">
-                  <Input
-                    value={form.imageUrl}
-                    onChange={e =>
-                      setForm({ ...form, imageUrl: e.target.value })
-                    }
-                    placeholder="Paste image URL — https://..."
-                    className="bg-white"
+                  {doUpload.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  {doUpload.isPending ? "Uploading…" : "Choose file"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/jpg"
+                    className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) onFile(f);
+                      e.currentTarget.value = "";
+                    }}
                   />
-                  <div className="flex flex-col gap-3 rounded-xl border border-dashed border-[#D5C8BA] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F8F4EE] text-[#8E8174]">
-                        <ImageIcon className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-[#211B18]">
-                          Upload to CDN
-                        </p>
-                        <p className="text-[11px] text-[#8B7E71]">
-                          5 MB max · product-images bucket
-                        </p>
-                      </div>
-                    </div>
-                    <label
-                      className={cn(
-                        "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border bg-white px-3 text-xs font-bold shadow-sm hover:bg-[#FCFAF6]",
-                        doUpload.isPending
-                          ? "pointer-events-none opacity-60 border-[#D8CDC0]"
-                          : "border-[#D8CDC0]"
-                      )}
+                </label>
+              </div>
+              {(doUpload.isPending || uploadProgress > 0) && (
+                <div className="grid gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#5A4E45]">
+                      {uploadProgress >= 100 ? "Done" : "Uploading…"}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-[#211B18]">
+                      {Math.round(uploadProgress)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#F0E6D8]">
+                    <div
+                      className="h-full bg-[#211B18] transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              {form.imageUrl ? (
+                <div className="overflow-hidden rounded-xl border border-[#E4DCD1] bg-white shadow-sm">
+                  <img
+                    src={form.imageUrl}
+                    alt="Preview"
+                    className="h-36 w-full object-cover"
+                    onError={e =>
+                      ((e.target as HTMLImageElement).style.display = "none")
+                    }
+                  />
+                  <div className="flex items-center justify-between gap-3 bg-[#FCFAF6] px-3 py-2">
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-[#5A4E45]">
+                      {form.imageUrl}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-xs text-[#B83D29] hover:bg-[#FFF0EA]"
+                      onClick={() => setForm(f => ({ ...f, imageUrl: "" }))}
                     >
-                      {doUpload.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Upload className="h-3.5 w-3.5" />
-                      )}
-                      {doUpload.isPending ? "Uploading…" : "Choose file"}
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/jpg"
-                        className="hidden"
-                        onChange={e => {
-                          const f = e.target.files?.[0];
-                          if (f) onFile(f);
-                          e.currentTarget.value = "";
-                        }}
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </FormField>
+          <div className="flex gap-3 pt-1">
+            <label className="flex items-center gap-2 text-xs font-bold">
+              <Switch
+                checked={form.veg}
+                onCheckedChange={v => setForm({ ...form, veg: v })}
+              />{" "}
+              Veg
+            </label>
+            <label className="flex items-center gap-2 text-xs font-bold">
+              <Switch
+                checked={form.available}
+                onCheckedChange={v => setForm({ ...form, available: v })}
+              />{" "}
+              Available
+            </label>
+          </div>
+          <label className="flex items-center justify-between rounded-xl border border-[#E4DCD1] bg-[#F8F4EE] px-4 py-3">
+            <div>
+              <p className="text-sm font-bold">Coming Soon</p>
+              <p className="text-[11px] text-[#827568]">
+                Visible but blurred; ordering blocked server-side
+              </p>
+            </div>
+            <Switch
+              checked={form.comingSoon}
+              onCheckedChange={v => setForm({ ...form, comingSoon: v })}
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[#E4DCD1] bg-[#F8F4EE] p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-extrabold tracking-[-0.02em]">
+              Sizes &amp; Pricing
+            </p>
+            <p className="mt-1 text-xs leading-4 text-[#75695E]">
+              Add sizes like Regular / Medium / Large, or custom labels like 8
+              inch. Each size is a sellable variant with its own quantity, unit,
+              price and availability.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={addVariant}
+            className="h-8 shrink-0 border-[#D8CDC0] bg-white text-xs"
+          >
+            + Add Size
+          </Button>
+        </div>
+        {variants.length === 0 ? (
+          <div className="mt-4 rounded-lg border border-dashed border-[#D5C8BA] bg-white p-4 text-center">
+            <p className="text-xs font-bold text-[#5A4E45]">No sizes yet</p>
+            <p className="mt-1 text-[11px] text-[#827568]">
+              Leave empty for a single-price product (e.g. Espresso ₹120), or
+              add sizes for cappuccino, pizza, cake etc.
+            </p>
+            <Button
+              onClick={addVariant}
+              variant="outline"
+              className="mt-3 h-8 border-[#D8CDC0] bg-[#FCFAF6] text-xs"
+            >
+              Add Regular
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3">
+            {variants.map((v, idx) => (
+              <div
+                key={idx}
+                className="rounded-xl border border-[#E6DDD2] bg-[#FCFAF6] p-3 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <label className="text-[11px] font-bold text-[#5A4E45]">
+                      Size name
+                    </label>
+                    <Input
+                      value={v.name}
+                      onChange={e =>
+                        updateVariant(idx, { name: e.target.value })
+                      }
+                      maxLength={120}
+                      placeholder="Regular"
+                      className="mt-1 h-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 pt-5">
+                    <button
+                      onClick={() => moveVariant(idx, -1)}
+                      disabled={idx === 0}
+                      className="grid h-7 w-7 place-items-center rounded-md border border-[#E6DDD2] bg-white text-xs disabled:opacity-40"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => moveVariant(idx, 1)}
+                      disabled={idx === variants.length - 1}
+                      className="grid h-7 w-7 place-items-center rounded-md border border-[#E6DDD2] bg-white text-xs disabled:opacity-40"
+                    >
+                      ↓
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeVariant(idx)}
+                      className="h-7 px-2 text-xs text-[#B83D29] hover:bg-[#FFF0EA]"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-[96px_96px_1fr] gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-bold text-[#5A4E45]">
+                      Quantity
+                    </span>
+                    <Input
+                      value={v.quantity}
+                      onChange={e =>
+                        updateVariant(idx, { quantity: e.target.value })
+                      }
+                      inputMode="decimal"
+                      placeholder="250"
+                      className="h-8 text-xs"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-bold text-[#5A4E45]">
+                      Unit
+                    </span>
+                    <select
+                      value={v.unit}
+                      onChange={e =>
+                        updateVariant(idx, { unit: e.target.value })
+                      }
+                      className="h-8 w-full rounded-md border border-[#DCCFC2] bg-white px-2 text-xs"
+                    >
+                      <option value="">—</option>
+                      {UNIT_OPTIONS.filter(Boolean).map(u => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                      <option value="custom">custom…</option>
+                    </select>
+                    {v.unit && !UNIT_OPTIONS.includes(v.unit as any) && (
+                      <Input
+                        value={v.unit}
+                        onChange={e =>
+                          updateVariant(idx, { unit: e.target.value })
+                        }
+                        placeholder="custom unit"
+                        className="mt-1 h-7 text-xs"
                       />
+                    )}
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-bold text-[#5A4E45]">
+                      Price (₹)
+                    </span>
+                    <Input
+                      value={v.price}
+                      onChange={e =>
+                        updateVariant(idx, { price: e.target.value })
+                      }
+                      inputMode="decimal"
+                      placeholder="180"
+                      className="h-8 text-xs"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-bold text-[#5A4E45]">
+                      SKU (optional)
+                    </span>
+                    <Input
+                      value={v.sku}
+                      onChange={e =>
+                        updateVariant(idx, { sku: e.target.value })
+                      }
+                      maxLength={80}
+                      placeholder="CAP-REG"
+                      className="h-8 text-xs"
+                    />
+                  </label>
+                  <div className="flex items-end gap-2 pb-1">
+                    <label className="flex items-center gap-1.5 text-xs font-bold">
+                      <Switch
+                        checked={v.available}
+                        onCheckedChange={val =>
+                          updateVariant(idx, { available: val })
+                        }
+                      />{" "}
+                      <span className="text-[11px]">
+                        {v.available ? "Available" : "Off"}
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs font-bold cursor-pointer">
+                      <input
+                        type="radio"
+                        name="defaultVariant"
+                        checked={v.isDefault}
+                        onChange={() => setDefault(idx)}
+                        className="h-3 w-3 accent-[#211B18]"
+                      />{" "}
+                      <span className="text-[11px]">Default</span>
                     </label>
                   </div>
-                  {(doUpload.isPending || uploadProgress > 0) && (
-                    <div className="grid gap-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-[#5A4E45]">
-                          {uploadProgress >= 100 ? "Done" : "Uploading…"}
-                        </span>
-                        <span className="font-mono text-[11px] font-bold text-[#211B18]">
-                          {Math.round(uploadProgress)}%
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#F0E6D8]">
-                        <div
-                          className="h-full bg-[#211B18] transition-all duration-300"
-                          style={{ width: `${uploadProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {form.imageUrl ? (
-                    <div className="overflow-hidden rounded-xl border border-[#E4DCD1] bg-white shadow-sm">
-                      <img
-                        src={form.imageUrl}
-                        alt="Preview"
-                        className="h-36 w-full object-cover"
-                        onError={e =>
-                          ((e.target as HTMLImageElement).style.display =
-                            "none")
-                        }
-                      />
-                      <div className="flex items-center justify-between gap-3 bg-[#FCFAF6] px-3 py-2">
-                        <span className="min-w-0 flex-1 truncate text-[11px] text-[#5A4E45]">
-                          {form.imageUrl}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 shrink-0 px-2 text-xs text-[#B83D29] hover:bg-[#FFF0EA]"
-                          onClick={() => setForm(f => ({ ...f, imageUrl: "" }))}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
-              </FormField>
-              <div className="flex gap-3 pt-1">
-                <label className="flex items-center gap-2 text-xs font-bold">
-                  <Switch
-                    checked={form.veg}
-                    onCheckedChange={v => setForm({ ...form, veg: v })}
-                  />{" "}
-                  Veg
-                </label>
-                <label className="flex items-center gap-2 text-xs font-bold">
-                  <Switch
-                    checked={form.available}
-                    onCheckedChange={v => setForm({ ...form, available: v })}
-                  />{" "}
-                  Available
-                </label>
               </div>
-              <label className="flex items-center justify-between rounded-xl border border-[#E4DCD1] bg-[#F8F4EE] px-4 py-3">
-                <div>
-                  <p className="text-sm font-bold">Coming Soon</p>
-                  <p className="text-[11px] text-[#827568]">
-                    Visible but blurred; ordering blocked server-side
-                  </p>
-                </div>
-                <Switch
-                  checked={form.comingSoon}
-                  onCheckedChange={v => setForm({ ...form, comingSoon: v })}
-                />
-              </label>
-            </div>
+            ))}
           </div>
-
-          <div className="rounded-xl border border-[#E4DCD1] bg-[#F8F4EE] p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-extrabold tracking-[-0.02em]">
-                  Sizes &amp; Pricing
-                </p>
-                <p className="mt-1 text-xs leading-4 text-[#75695E]">
-                  Add sizes like Regular / Medium / Large, or custom labels like
-                  8 inch. Each size is a sellable variant with its own quantity,
-                  unit, price and availability.
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                onClick={addVariant}
-                className="h-8 shrink-0 border-[#D8CDC0] bg-white text-xs"
-              >
-                + Add Size
-              </Button>
-            </div>
-            {variants.length === 0 ? (
-              <div className="mt-4 rounded-lg border border-dashed border-[#D5C8BA] bg-white p-4 text-center">
-                <p className="text-xs font-bold text-[#5A4E45]">No sizes yet</p>
-                <p className="mt-1 text-[11px] text-[#827568]">
-                  Leave empty for a single-price product (e.g. Espresso ₹120),
-                  or add sizes for cappuccino, pizza, cake etc.
-                </p>
-                <Button
-                  onClick={addVariant}
-                  variant="outline"
-                  className="mt-3 h-8 border-[#D8CDC0] bg-[#FCFAF6] text-xs"
-                >
-                  Add Regular
-                </Button>
-              </div>
-            ) : (
-              <div className="mt-4 grid gap-3">
-                {variants.map((v, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-xl border border-[#E6DDD2] bg-[#FCFAF6] p-3 shadow-sm"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <label className="text-[11px] font-bold text-[#5A4E45]">
-                          Size name
-                        </label>
-                        <Input
-                          value={v.name}
-                          onChange={e =>
-                            updateVariant(idx, { name: e.target.value })
-                          }
-                          maxLength={120}
-                          placeholder="Regular"
-                          className="mt-1 h-8 text-xs"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1 pt-5">
-                        <button
-                          onClick={() => moveVariant(idx, -1)}
-                          disabled={idx === 0}
-                          className="grid h-7 w-7 place-items-center rounded-md border border-[#E6DDD2] bg-white text-xs disabled:opacity-40"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          onClick={() => moveVariant(idx, 1)}
-                          disabled={idx === variants.length - 1}
-                          className="grid h-7 w-7 place-items-center rounded-md border border-[#E6DDD2] bg-white text-xs disabled:opacity-40"
-                        >
-                          ↓
-                        </button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeVariant(idx)}
-                          className="h-7 px-2 text-xs text-[#B83D29] hover:bg-[#FFF0EA]"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="mt-3 grid grid-cols-[96px_96px_1fr] gap-2">
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-bold text-[#5A4E45]">
-                          Quantity
-                        </span>
-                        <Input
-                          value={v.quantity}
-                          onChange={e =>
-                            updateVariant(idx, { quantity: e.target.value })
-                          }
-                          inputMode="decimal"
-                          placeholder="250"
-                          className="h-8 text-xs"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-bold text-[#5A4E45]">
-                          Unit
-                        </span>
-                        <select
-                          value={v.unit}
-                          onChange={e =>
-                            updateVariant(idx, { unit: e.target.value })
-                          }
-                          className="h-8 w-full rounded-md border border-[#DCCFC2] bg-white px-2 text-xs"
-                        >
-                          <option value="">—</option>
-                          {UNIT_OPTIONS.filter(Boolean).map(u => (
-                            <option key={u} value={u}>
-                              {u}
-                            </option>
-                          ))}
-                          <option value="custom">custom…</option>
-                        </select>
-                        {v.unit && !UNIT_OPTIONS.includes(v.unit as any) && (
-                          <Input
-                            value={v.unit}
-                            onChange={e =>
-                              updateVariant(idx, { unit: e.target.value })
-                            }
-                            placeholder="custom unit"
-                            className="mt-1 h-7 text-xs"
-                          />
-                        )}
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-bold text-[#5A4E45]">
-                          Price (₹)
-                        </span>
-                        <Input
-                          value={v.price}
-                          onChange={e =>
-                            updateVariant(idx, { price: e.target.value })
-                          }
-                          inputMode="decimal"
-                          placeholder="180"
-                          className="h-8 text-xs"
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-bold text-[#5A4E45]">
-                          SKU (optional)
-                        </span>
-                        <Input
-                          value={v.sku}
-                          onChange={e =>
-                            updateVariant(idx, { sku: e.target.value })
-                          }
-                          maxLength={80}
-                          placeholder="CAP-REG"
-                          className="h-8 text-xs"
-                        />
-                      </label>
-                      <div className="flex items-end gap-2 pb-1">
-                        <label className="flex items-center gap-1.5 text-xs font-bold">
-                          <Switch
-                            checked={v.available}
-                            onCheckedChange={val =>
-                              updateVariant(idx, { available: val })
-                            }
-                          />{" "}
-                          <span className="text-[11px]">
-                            {v.available ? "Available" : "Off"}
-                          </span>
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs font-bold cursor-pointer">
-                          <input
-                            type="radio"
-                            name="defaultVariant"
-                            checked={v.isDefault}
-                            onChange={() => setDefault(idx)}
-                            className="h-3 w-3 accent-[#211B18]"
-                          />{" "}
-                          <span className="text-[11px]">Default</span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {variants.length > 0 && (
-              <p className="mt-3 text-[11px] text-[#8B7E71]">
-                Tip: Regular / Small / Medium / Large are suggestions — you can
-                use any label like <em>8 inch</em> or <em>Family</em>.
-              </p>
-            )}
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={create.isPending || update.isPending}
-            className="bg-[#211B18] text-white"
-          >
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        )}
+        {variants.length > 0 && (
+          <p className="mt-3 text-[11px] text-[#8B7E71]">
+            Tip: Regular / Small / Medium / Large are suggestions — you can use
+            any label like <em>8 inch</em> or <em>Family</em>.
+          </p>
+        )}
+      </div>
+    </FormDialog>
   );
 }

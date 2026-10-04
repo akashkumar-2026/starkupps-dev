@@ -111,6 +111,62 @@ supabase/                   migrations and local project config
 - **Payments/images** — Supabase Storage, uploaded through the gateway so the
   bucket stays private.
 
+### Dialogs
+
+Every modal in the admin is one of three shapes, all built on
+`src/components/shared/dialog/`:
+
+| Component       | Use for                                                   |
+| --------------- | --------------------------------------------------------- |
+| `ViewDialog`    | read-only detail: order, recipe, notifications            |
+| `FormDialog`    | create / edit: it owns the `<form>` and the submit action |
+| `ConfirmDialog` | destructive or irreversible actions, on `AlertDialog`     |
+
+`AppDialog` underneath them owns the shell, and the shell is the contract:
+
+- **Header** — fixed. Title, description and the close control.
+- **Body** — the only scroll container, scrollbar hidden. Not the panel, ever.
+- **Footer** — fixed. Every action lives here.
+
+Pick `FormDialog` unless the dialog is genuinely read-only; it solves the three
+mistakes that keep recurring when a dialog is hand-assembled — a submit button
+that does nothing because it sits outside the form, a Cancel that submits, and a
+double submit from a second Enter while a mutation is in flight.
+
+```tsx
+// A view dialog: scrollable body, fixed header and Close action.
+<ViewDialog
+  open={open}
+  onOpenChange={setOpen}
+  size="xl"
+  title={`Ticket #${order.orderNumber}`}
+  description={`${customer} · ${type}`}
+>
+  <OrderSections order={order} />
+</ViewDialog>
+
+// A form dialog. `onSubmit` is the form's own submit handler; Enter in any field
+// and the footer's Save both reach it.
+<FormDialog
+  open={open}
+  onOpenChange={setOpen}
+  size="2xl"
+  title="Create Coupon"
+  description="Who, where, what, when."
+  onSubmit={handleSave}
+  submitLabel={save.isPending ? "Creating…" : "Create Coupon"}
+  submitPending={save.isPending}
+  isDirty={isDirty}          // Escape and the close button stop discarding work
+  formClassName="space-y-6"
+>
+  <CouponFields />
+</FormDialog>
+```
+
+Reach for `AppDialog` directly only when the layout genuinely is none of the
+three, and then use `DialogHeader` / `DialogBody` / `DialogFooter` from
+`components/ui/dialog` — never a hand-rolled header inside the body.
+
 ## Environment
 
 `.env.example` documents every variable. The rule that matters:

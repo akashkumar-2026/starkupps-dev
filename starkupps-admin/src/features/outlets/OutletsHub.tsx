@@ -2,14 +2,6 @@ import { inr } from "@/utils/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -38,6 +30,7 @@ import { toast } from "sonner";
 import { nanoid } from "nanoid";
 import { IndiaStateCitySelect } from "@/components/shared/IndiaStateCitySelect";
 import { LocationPicker } from "@/components/shared/LocationPicker";
+import { FormDialog } from "@/components/shared/dialog";
 import { OutletDeleteDialog } from "./OutletDeleteDialog";
 import { OutletFulfillmentPanel } from "./OutletFulfillmentPanel";
 import { useAuth } from "@/state/auth-provider";
@@ -400,7 +393,8 @@ function OutletCreateDialog({
     return Object.keys(e).length === 0;
   };
 
-  const submit = () => {
+  const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (!validate()) return toast.error("Please fix the highlighted fields");
     const code = form.code.trim() || generateOutletCode();
     create.mutate({
@@ -422,374 +416,346 @@ function OutletCreateDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden bg-[#FCFAF6] p-0 sm:max-w-2xl gap-0">
-        <DialogHeader className="sticky top-0 z-10 shrink-0 border-b border-[#E4DCD1] bg-[#FCFAF6] px-6 py-4">
-          <DialogTitle className="text-[15px]">Add outlet</DialogTitle>
-          <DialogDescription className="text-xs">
-            Establish the branch — essential info only. Operational settings are
-            configured after creation.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          {/* Basic Information */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
-                Basic Information
-              </span>
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-xs font-bold">Outlet name *</span>
-                <Input
-                  value={form.name}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setForm(f => ({ ...f, name: v }));
-                    if (errors.name) setErrors(prev => ({ ...prev, name: "" }));
-                  }}
-                  placeholder="StarKupps Koramangala"
-                  className={`bg-white h-10 ${errors.name ? "border-red-400" : ""}`}
-                />
-                {errors.name && (
-                  <p className="text-[11px] text-red-600">{errors.name}</p>
-                )}
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold">
-                  Outlet code{" "}
-                  <span className="font-normal text-[#87796C]">(auto)</span>
-                </span>
-                <div className="flex gap-2">
-                  <Input
-                    value={form.code}
-                    readOnly
-                    placeholder="SK-XXXXXX"
-                    className="bg-[#F6F0E8] font-mono text-xs tracking-widest h-10"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-10 w-10 shrink-0"
-                    onClick={() =>
-                      setForm(f => ({ ...f, code: generateOutletCode() }))
-                    }
-                    title="Regenerate code"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold">
-                  Owner / Outlet Manager
-                </span>
-                <Select
-                  value={form.ownerId ? String(form.ownerId) : "__none__"}
-                  onValueChange={v =>
-                    setForm(f => ({
-                      ...f,
-                      ownerId: v === "__none__" ? null : Number(v),
-                    }))
-                  }
-                >
-                  <SelectTrigger className="bg-white text-xs h-10">
-                    <SelectValue placeholder="Select owner (optional)" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    <SelectItem value="__none__">— No owner —</SelectItem>
-                    {staffQ.isLoading ? (
-                      <div className="p-3 text-xs text-[#87796C]">
-                        Loading staff…
-                      </div>
-                    ) : (
-                      eligibleStaff.map((s: any) => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          {s.name} — {s.role} · {s.email}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-[#87796C]">
-                  Select from existing active staff.
-                </p>
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold">Status</span>
-                <Select
-                  value={form.status}
-                  onValueChange={(v: any) =>
-                    setForm(f => ({ ...f, status: v }))
-                  }
-                >
-                  <SelectTrigger className="bg-white h-10">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-          </div>
-
-          {/* Location */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
-                Location
-              </span>
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-            </div>
-            <label className="space-y-1.5">
-              <span className="text-xs font-bold">Address *</span>
-              <Textarea
-                value={form.address}
-                onChange={e => {
-                  const v = e.target.value;
-                  setForm(f => ({ ...f, address: v }));
-                  if (errors.address)
-                    setErrors(prev => ({ ...prev, address: "" }));
-                }}
-                placeholder="123, MG Road, Koramangala"
-                className={`bg-white min-h-[80px] ${errors.address ? "border-red-400" : ""}`}
-              />
-              {errors.address && (
-                <p className="text-[11px] text-red-600">{errors.address}</p>
-              )}
-            </label>
-            <IndiaStateCitySelect
-              stateValue={form.state}
-              cityValue={form.city}
-              onStateChange={v => {
-                setForm(f => ({ ...f, state: v }));
-                if (errors.state || errors.city)
-                  setErrors(prev => ({ ...prev, state: "", city: "" }));
-              }}
-              onCityChange={v => {
-                setForm(f => ({ ...f, city: v }));
-                if (errors.city) setErrors(prev => ({ ...prev, city: "" }));
-              }}
-            />
-            {(errors.state || errors.city) && (
-              <p className="text-[11px] text-red-600">
-                {errors.state || errors.city}
-              </p>
-            )}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold">Pincode</span>
-                <Input
-                  value={form.pincode}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setForm(f => ({ ...f, pincode: v }));
-                    if (errors.pincode)
-                      setErrors(prev => ({ ...prev, pincode: "" }));
-                  }}
-                  placeholder="560034"
-                  className={`bg-white h-10 ${errors.pincode ? "border-red-400" : ""}`}
-                />
-                {errors.pincode && (
-                  <p className="text-[11px] text-red-600">{errors.pincode}</p>
-                )}
-              </label>
-            </div>
-            <LocationPicker
-              latitude={form.latitude}
-              longitude={form.longitude}
-              onChange={(lat, lng) =>
-                setForm(f => ({ ...f, latitude: lat, longitude: lng }))
-              }
-            />
-            {(errors.latitude || errors.longitude) && (
-              <p className="text-[11px] text-red-600">
-                {errors.latitude || errors.longitude}
-              </p>
-            )}
-          </div>
-
-          {/* Contact */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
-                Contact
-              </span>
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold">Phone</span>
-                <Input
-                  value={form.phone}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setForm(f => ({ ...f, phone: v }));
-                    if (errors.phone)
-                      setErrors(prev => ({ ...prev, phone: "" }));
-                  }}
-                  placeholder="+91 98765 43210"
-                  className={`bg-white h-10 ${errors.phone ? "border-red-400" : ""}`}
-                />
-                {errors.phone && (
-                  <p className="text-[11px] text-red-600">{errors.phone}</p>
-                )}
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold">Email</span>
-                <Input
-                  value={form.email}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setForm(f => ({ ...f, email: v }));
-                    if (errors.email)
-                      setErrors(prev => ({ ...prev, email: "" }));
-                  }}
-                  placeholder="koramangala@starkupps.com"
-                  className={`bg-white h-10 ${errors.email ? "border-red-400" : ""}`}
-                />
-                {errors.email && (
-                  <p className="text-[11px] text-red-600">{errors.email}</p>
-                )}
-              </label>
-            </div>
-          </div>
-
-          {/* Initial Setup */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
-                Initial Setup
-              </span>
-              <span className="h-px flex-1 bg-[#E4DCD1]" />
-            </div>
-            <label className="flex items-center justify-between rounded-xl border border-[#E4DCD1] bg-white px-4 py-3">
-              <div>
-                <p className="text-xs font-bold">Delivery Enabled</p>
-                <p className="text-[11px] text-[#87796C]">
-                  Offer delivery from this outlet
-                </p>
-              </div>
-              <Switch
-                checked={form.deliveryEnabled}
-                onCheckedChange={v =>
-                  setForm(f => ({ ...f, deliveryEnabled: v }))
-                }
-              />
-            </label>
-            <div className="space-y-2">
-              <Label className="text-xs font-bold">Appointed Staff</Label>
-              <div className="rounded-xl border border-[#E4DCD1] bg-white">
-                <div className="border-b border-[#E7DED4] p-3">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#8E8174]" />
-                    <Input
-                      value={staffSearch}
-                      onChange={e => setStaffSearch(e.target.value)}
-                      placeholder="Search staff…"
-                      className="h-8 pl-9 text-xs"
-                    />
-                  </div>
-                  <p className="mt-2 text-[11px] text-[#87796C]">
-                    {form.staffIds.length} selected · {filteredStaff.length}{" "}
-                    shown
-                  </p>
-                </div>
-                <div className="max-h-[180px] overflow-y-auto p-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  {staffQ.isLoading ? (
-                    <div className="grid place-items-center py-8">
-                      <Loader2 className="h-5 w-5 animate-spin text-[#E2533C]" />
-                    </div>
-                  ) : staffQ.isError ? (
-                    <div className="p-3 text-xs text-[#8D5145]">
-                      Failed to load staff.{" "}
-                      <button
-                        onClick={() => staffQ.refetch()}
-                        className="underline"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  ) : !filteredStaff.length ? (
-                    <div className="p-3 text-center text-xs text-[#87796C]">
-                      {staffSearch
-                        ? "No matching staff"
-                        : "No eligible staff found"}
-                    </div>
-                  ) : (
-                    filteredStaff.map((s: any) => {
-                      const checked = form.staffIds.includes(s.id);
-                      const isOwner = form.ownerId === s.id;
-                      return (
-                        <label
-                          key={s.id}
-                          className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-[#F6F0E8] ${checked ? "bg-[#F6F0E8]" : ""}`}
-                        >
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={v => {
-                              setForm(f => {
-                                const set = new Set(f.staffIds);
-                                if (v) set.add(s.id);
-                                else set.delete(s.id);
-                                return { ...f, staffIds: Array.from(set) };
-                              });
-                            }}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-bold">
-                              {s.name}{" "}
-                              {isOwner && (
-                                <span className="ml-1 rounded-full bg-[#211B18] px-1.5 py-0.5 text-[9px] font-bold text-white">
-                                  Owner
-                                </span>
-                              )}
-                            </p>
-                            <p className="truncate text-[11px] text-[#87796C]">
-                              {s.role} · {s.email}
-                            </p>
-                          </div>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-              <p className="text-[11px] text-[#87796C]">
-                Creates proper <code>outlet_staff</code> rows — not a CSV. Owner
-                is stored separately.
-              </p>
-            </div>
-          </div>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="2xl"
+      title="Add outlet"
+      description="Establish the branch — essential info only. Operational settings are configured after creation."
+      onSubmit={submitForm}
+      submitLabel={create.isPending ? "Creating…" : "Create Outlet"}
+      submitPending={create.isPending}
+      formClassName="space-y-5"
+    >
+      {/* Basic Information */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
+            Basic Information
+          </span>
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
         </div>
-
-        <DialogFooter className="sticky bottom-0 z-10 shrink-0 border-t border-[#E4DCD1] bg-[#FCFAF6] px-6 py-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={create.isPending}
-            className="bg-[#211B18] text-white"
-          >
-            {create.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Create Outlet"
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-xs font-bold">Outlet name *</span>
+            <Input
+              value={form.name}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(f => ({ ...f, name: v }));
+                if (errors.name) setErrors(prev => ({ ...prev, name: "" }));
+              }}
+              placeholder="StarKupps Koramangala"
+              className={`bg-white h-10 ${errors.name ? "border-red-400" : ""}`}
+            />
+            {errors.name && (
+              <p className="text-[11px] text-red-600">{errors.name}</p>
             )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-bold">
+              Outlet code{" "}
+              <span className="font-normal text-[#87796C]">(auto)</span>
+            </span>
+            <div className="flex gap-2">
+              <Input
+                value={form.code}
+                readOnly
+                placeholder="SK-XXXXXX"
+                className="bg-[#F6F0E8] font-mono text-xs tracking-widest h-10"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={() =>
+                  setForm(f => ({ ...f, code: generateOutletCode() }))
+                }
+                title="Regenerate code"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-bold">Owner / Outlet Manager</span>
+            <Select
+              value={form.ownerId ? String(form.ownerId) : "__none__"}
+              onValueChange={v =>
+                setForm(f => ({
+                  ...f,
+                  ownerId: v === "__none__" ? null : Number(v),
+                }))
+              }
+            >
+              <SelectTrigger className="bg-white text-xs h-10">
+                <SelectValue placeholder="Select owner (optional)" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectItem value="__none__">— No owner —</SelectItem>
+                {staffQ.isLoading ? (
+                  <div className="p-3 text-xs text-[#87796C]">
+                    Loading staff…
+                  </div>
+                ) : (
+                  eligibleStaff.map((s: any) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name} — {s.role} · {s.email}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-[#87796C]">
+              Select from existing active staff.
+            </p>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-bold">Status</span>
+            <Select
+              value={form.status}
+              onValueChange={(v: any) => setForm(f => ({ ...f, status: v }))}
+            >
+              <SelectTrigger className="bg-white h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      </div>
+
+      {/* Location */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
+            Location
+          </span>
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
+        </div>
+        <label className="space-y-1.5">
+          <span className="text-xs font-bold">Address *</span>
+          <Textarea
+            value={form.address}
+            onChange={e => {
+              const v = e.target.value;
+              setForm(f => ({ ...f, address: v }));
+              if (errors.address) setErrors(prev => ({ ...prev, address: "" }));
+            }}
+            placeholder="123, MG Road, Koramangala"
+            className={`bg-white min-h-[80px] ${errors.address ? "border-red-400" : ""}`}
+          />
+          {errors.address && (
+            <p className="text-[11px] text-red-600">{errors.address}</p>
+          )}
+        </label>
+        <IndiaStateCitySelect
+          stateValue={form.state}
+          cityValue={form.city}
+          onStateChange={v => {
+            setForm(f => ({ ...f, state: v }));
+            if (errors.state || errors.city)
+              setErrors(prev => ({ ...prev, state: "", city: "" }));
+          }}
+          onCityChange={v => {
+            setForm(f => ({ ...f, city: v }));
+            if (errors.city) setErrors(prev => ({ ...prev, city: "" }));
+          }}
+        />
+        {(errors.state || errors.city) && (
+          <p className="text-[11px] text-red-600">
+            {errors.state || errors.city}
+          </p>
+        )}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="text-xs font-bold">Pincode</span>
+            <Input
+              value={form.pincode}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(f => ({ ...f, pincode: v }));
+                if (errors.pincode)
+                  setErrors(prev => ({ ...prev, pincode: "" }));
+              }}
+              placeholder="560034"
+              className={`bg-white h-10 ${errors.pincode ? "border-red-400" : ""}`}
+            />
+            {errors.pincode && (
+              <p className="text-[11px] text-red-600">{errors.pincode}</p>
+            )}
+          </label>
+        </div>
+        <LocationPicker
+          latitude={form.latitude}
+          longitude={form.longitude}
+          onChange={(lat, lng) =>
+            setForm(f => ({ ...f, latitude: lat, longitude: lng }))
+          }
+        />
+        {(errors.latitude || errors.longitude) && (
+          <p className="text-[11px] text-red-600">
+            {errors.latitude || errors.longitude}
+          </p>
+        )}
+      </div>
+
+      {/* Contact */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
+            Contact
+          </span>
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="text-xs font-bold">Phone</span>
+            <Input
+              value={form.phone}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(f => ({ ...f, phone: v }));
+                if (errors.phone) setErrors(prev => ({ ...prev, phone: "" }));
+              }}
+              placeholder="+91 98765 43210"
+              className={`bg-white h-10 ${errors.phone ? "border-red-400" : ""}`}
+            />
+            {errors.phone && (
+              <p className="text-[11px] text-red-600">{errors.phone}</p>
+            )}
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-bold">Email</span>
+            <Input
+              value={form.email}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(f => ({ ...f, email: v }));
+                if (errors.email) setErrors(prev => ({ ...prev, email: "" }));
+              }}
+              placeholder="koramangala@starkupps.com"
+              className={`bg-white h-10 ${errors.email ? "border-red-400" : ""}`}
+            />
+            {errors.email && (
+              <p className="text-[11px] text-red-600">{errors.email}</p>
+            )}
+          </label>
+        </div>
+      </div>
+
+      {/* Initial Setup */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#A83825]">
+            Initial Setup
+          </span>
+          <span className="h-px flex-1 bg-[#E4DCD1]" />
+        </div>
+        <label className="flex items-center justify-between rounded-xl border border-[#E4DCD1] bg-white px-4 py-3">
+          <div>
+            <p className="text-xs font-bold">Delivery Enabled</p>
+            <p className="text-[11px] text-[#87796C]">
+              Offer delivery from this outlet
+            </p>
+          </div>
+          <Switch
+            checked={form.deliveryEnabled}
+            onCheckedChange={v => setForm(f => ({ ...f, deliveryEnabled: v }))}
+          />
+        </label>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold">Appointed Staff</Label>
+          <div className="rounded-xl border border-[#E4DCD1] bg-white">
+            <div className="border-b border-[#E7DED4] p-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#8E8174]" />
+                <Input
+                  value={staffSearch}
+                  onChange={e => setStaffSearch(e.target.value)}
+                  placeholder="Search staff…"
+                  className="h-8 pl-9 text-xs"
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-[#87796C]">
+                {form.staffIds.length} selected · {filteredStaff.length} shown
+              </p>
+            </div>
+            <div className="scrollbar-none max-h-[180px] overflow-y-auto p-2">
+              {staffQ.isLoading ? (
+                <div className="grid place-items-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#E2533C]" />
+                </div>
+              ) : staffQ.isError ? (
+                <div className="p-3 text-xs text-[#8D5145]">
+                  Failed to load staff.{" "}
+                  <button
+                    onClick={() => staffQ.refetch()}
+                    className="underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : !filteredStaff.length ? (
+                <div className="p-3 text-center text-xs text-[#87796C]">
+                  {staffSearch
+                    ? "No matching staff"
+                    : "No eligible staff found"}
+                </div>
+              ) : (
+                filteredStaff.map((s: any) => {
+                  const checked = form.staffIds.includes(s.id);
+                  const isOwner = form.ownerId === s.id;
+                  return (
+                    <label
+                      key={s.id}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-[#F6F0E8] ${checked ? "bg-[#F6F0E8]" : ""}`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={v => {
+                          setForm(f => {
+                            const set = new Set(f.staffIds);
+                            if (v) set.add(s.id);
+                            else set.delete(s.id);
+                            return { ...f, staffIds: Array.from(set) };
+                          });
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-bold">
+                          {s.name}{" "}
+                          {isOwner && (
+                            <span className="ml-1 rounded-full bg-[#211B18] px-1.5 py-0.5 text-[9px] font-bold text-white">
+                              Owner
+                            </span>
+                          )}
+                        </p>
+                        <p className="truncate text-[11px] text-[#87796C]">
+                          {s.role} · {s.email}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+          <p className="text-[11px] text-[#87796C]">
+            Creates proper <code>outlet_staff</code> rows — not a CSV. Owner is
+            stored separately.
+          </p>
+        </div>
+      </div>
+    </FormDialog>
   );
 }
 

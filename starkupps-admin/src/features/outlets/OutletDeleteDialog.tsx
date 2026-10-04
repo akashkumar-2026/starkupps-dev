@@ -1,6 +1,7 @@
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogBody,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -8,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { dialogDangerAction } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { queryClient } from "@/app/query-client";
@@ -146,10 +148,17 @@ export function OutletDeleteDialog({
         onOpenChange(next);
       }}
     >
-      <AlertDialogContent className="max-w-lg">
+      {/*
+        Deliberately the primitives rather than `ConfirmDialog`: the delete
+        action only exists once the impact preflight says the outlet is
+        deletable, and the cancel label changes with it. The three-region shell
+        is the same one every other prompt uses, so the blocker list scrolls and
+        the actions stay put.
+      */}
+      <AlertDialogContent size="lg">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-4 w-4 text-[#B83D29]" />
+            <Trash2 className="h-4 w-4 text-dialog-danger" />
             Delete {outletName}?
           </AlertDialogTitle>
           <AlertDialogDescription>
@@ -162,177 +171,179 @@ export function OutletDeleteDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {impact.isPending && !noTarget && (
-          <div className="flex items-center gap-2 rounded-lg border border-[#E4DCD1] bg-[#FCFAF6] px-3 py-6 text-xs text-[#77695E]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Checking what this delete would affect…
-          </div>
-        )}
+        <AlertDialogBody>
+          {impact.isPending && !noTarget && (
+            <div className="flex items-center gap-2 rounded-lg border border-[#E4DCD1] bg-[#FCFAF6] px-3 py-6 text-xs text-[#77695E]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking what this delete would affect…
+            </div>
+          )}
 
-        {blocked && (
-          <p
-            role="alert"
-            className="flex items-start gap-2 rounded-lg border border-[#E7B7AC] bg-[#FBEBE7] px-3 py-2 text-xs text-[#8E2A19]"
-          >
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              {noTarget
-                ? "No outlet selected. Close this dialog and try again."
-                : `Could not load the delete impact. ${apiError(impact.error)} `}
-              {impact.error && (
-                <button
-                  type="button"
-                  onClick={() => void impact.refetch()}
-                  className="font-bold underline underline-offset-2"
-                >
-                  Retry
-                </button>
-              )}
-            </span>
-          </p>
-        )}
+          {blocked && (
+            <p
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-[#E7B7AC] bg-[#FBEBE7] px-3 py-2 text-xs text-[#8E2A19]"
+            >
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                {noTarget
+                  ? "No outlet selected. Close this dialog and try again."
+                  : `Could not load the delete impact. ${apiError(impact.error)} `}
+                {impact.error && (
+                  <button
+                    type="button"
+                    onClick={() => void impact.refetch()}
+                    className="font-bold underline underline-offset-2"
+                  >
+                    Retry
+                  </button>
+                )}
+              </span>
+            </p>
+          )}
 
-        {data && blockers.length > 0 && (
-          <ul
-            role="alert"
-            className="space-y-1.5 rounded-lg border border-[#E7B7AC] bg-[#FBEBE7] px-3 py-2.5 text-xs text-[#8E2A19]"
-          >
-            {blockers.map(message => (
-              <li key={message} className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{message}</span>
+          {data && blockers.length > 0 && (
+            <ul
+              role="alert"
+              className="space-y-1.5 rounded-lg border border-[#E7B7AC] bg-[#FBEBE7] px-3 py-2.5 text-xs text-[#8E2A19]"
+            >
+              {blockers.map(message => (
+                <li key={message} className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{message}</span>
+                </li>
+              ))}
+              <li className="pt-0.5 text-[#8E2A19]/80">
+                Cancel the work, or mark the outlet inactive to take it off the
+                storefront without losing its history.
               </li>
-            ))}
-            <li className="pt-0.5 text-[#8E2A19]/80">
-              Cancel the work, or mark the outlet inactive to take it off the
-              storefront without losing its history.
-            </li>
-          </ul>
-        )}
+            </ul>
+          )}
 
-        {data && !data.deletable && (
-          <p className="text-xs text-[#77695E]">
-            To close an outlet without destroying anything, set its status to{" "}
-            <span className="font-bold">Inactive</span> instead.
-          </p>
-        )}
+          {data && !data.deletable && (
+            <p className="text-xs text-[#77695E]">
+              To close an outlet without destroying anything, set its status to{" "}
+              <span className="font-bold">Inactive</span> instead.
+            </p>
+          )}
 
-        {data && (
-          <div className="space-y-3 text-xs">
-            {(data.purged.length > 0 || data.unassignedStaff.count > 0) && (
-              <div className="rounded-lg border border-[#E4DCD1] bg-white">
-                <p className="border-b border-[#EDE5DA] px-3 py-2 font-bold text-[#8E2A19]">
-                  {data.totalPurged > 0
-                    ? `Permanently deleted (${data.totalPurged} rows)`
-                    : "Also cleared"}
-                </p>
-                <ul className="divide-y divide-[#F0EAE1]">
-                  {data.purged.map(row => (
-                    <li
-                      key={row.table}
-                      className="flex items-center justify-between px-3 py-1.5"
-                    >
-                      <span className="text-[#4A403A]">{row.label}</span>
-                      <span className="font-mono font-bold">{row.count}</span>
-                    </li>
-                  ))}
-                  {data.unassignedStaff.count > 0 && (
-                    <li className="flex items-center justify-between px-3 py-1.5">
-                      <span className="text-[#4A403A]">
-                        {data.unassignedStaff.label}
-                      </span>
-                      <span className="font-mono font-bold">
-                        {data.unassignedStaff.count}
-                      </span>
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
-
-            {data.detached.length > 0 && (
-              <div className="rounded-lg border border-[#CFE0D5] bg-[#F4F9F6]">
-                <p className="border-b border-[#DCEBE2] px-3 py-2 font-bold text-[#2F6947]">
-                  Kept as financial records
-                </p>
-                <ul className="divide-y divide-[#E6F0EA]">
-                  {data.detached.map(row => (
-                    <li
-                      key={row.table}
-                      className="flex items-center justify-between px-3 py-1.5"
-                    >
-                      <span className="text-[#33553F]">
-                        {row.label} — no longer linked to an outlet
-                      </span>
-                      <span className="font-mono font-bold text-[#2F6947]">
-                        {row.count}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {data.purged.length === 0 &&
-              data.detached.length === 0 &&
-              data.unassignedStaff.count === 0 && (
-                <p className="text-[#77695E]">
-                  Nothing else is attached to this outlet yet.
-                </p>
+          {data && (
+            <div className="space-y-3 text-xs">
+              {(data.purged.length > 0 || data.unassignedStaff.count > 0) && (
+                <div className="rounded-lg border border-[#E4DCD1] bg-white">
+                  <p className="border-b border-[#EDE5DA] px-3 py-2 font-bold text-[#8E2A19]">
+                    {data.totalPurged > 0
+                      ? `Permanently deleted (${data.totalPurged} rows)`
+                      : "Also cleared"}
+                  </p>
+                  <ul className="divide-y divide-[#F0EAE1]">
+                    {data.purged.map(row => (
+                      <li
+                        key={row.table}
+                        className="flex items-center justify-between px-3 py-1.5"
+                      >
+                        <span className="text-[#4A403A]">{row.label}</span>
+                        <span className="font-mono font-bold">{row.count}</span>
+                      </li>
+                    ))}
+                    {data.unassignedStaff.count > 0 && (
+                      <li className="flex items-center justify-between px-3 py-1.5">
+                        <span className="text-[#4A403A]">
+                          {data.unassignedStaff.label}
+                        </span>
+                        <span className="font-mono font-bold">
+                          {data.unassignedStaff.count}
+                        </span>
+                      </li>
+                    )}
+                  </ul>
+                </div>
               )}
-          </div>
-        )}
 
-        {!notDeletable && (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="outlet-delete-confirm" className="text-xs">
-                Type{" "}
-                <span className="font-mono font-bold text-[#A83825]">
-                  {outletCode}
-                </span>{" "}
-                to confirm
-              </Label>
-              <Input
-                id="outlet-delete-confirm"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter" && canSubmit) {
-                    e.preventDefault();
-                    submit();
-                  }
-                }}
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                aria-describedby="outlet-delete-confirm-help"
-                placeholder={outletCode}
-                className="h-9 border-[#DCCFC2] bg-white font-mono text-xs uppercase"
-              />
-              <p
-                id="outlet-delete-confirm-help"
-                className="text-[11px] text-[#87796C]"
-              >
-                The server re-checks this code and the blocker list, so a
-                request that does not match is rejected.
-              </p>
+              {data.detached.length > 0 && (
+                <div className="rounded-lg border border-[#CFE0D5] bg-[#F4F9F6]">
+                  <p className="border-b border-[#DCEBE2] px-3 py-2 font-bold text-[#2F6947]">
+                    Kept as financial records
+                  </p>
+                  <ul className="divide-y divide-[#E6F0EA]">
+                    {data.detached.map(row => (
+                      <li
+                        key={row.table}
+                        className="flex items-center justify-between px-3 py-1.5"
+                      >
+                        <span className="text-[#33553F]">
+                          {row.label} — no longer linked to an outlet
+                        </span>
+                        <span className="font-mono font-bold text-[#2F6947]">
+                          {row.count}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {data.purged.length === 0 &&
+                data.detached.length === 0 &&
+                data.unassignedStaff.count === 0 && (
+                  <p className="text-[#77695E]">
+                    Nothing else is attached to this outlet yet.
+                  </p>
+                )}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="outlet-delete-reason" className="text-xs">
-                Reason <span className="text-[#A29A92]">(optional)</span>
-              </Label>
-              <Input
-                id="outlet-delete-reason"
-                value={reason}
-                maxLength={240}
-                onChange={e => setReason(e.target.value)}
-                placeholder="Closed permanently, merged into Jmp"
-                className="h-9 border-[#DCCFC2] bg-[#FCFAF6] text-xs"
-              />
+          )}
+
+          {!notDeletable && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="outlet-delete-confirm" className="text-xs">
+                  Type{" "}
+                  <span className="font-mono font-bold text-[#A83825]">
+                    {outletCode}
+                  </span>{" "}
+                  to confirm
+                </Label>
+                <Input
+                  id="outlet-delete-confirm"
+                  value={confirm}
+                  onChange={e => setConfirm(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && canSubmit) {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  aria-describedby="outlet-delete-confirm-help"
+                  placeholder={outletCode}
+                  className="h-9 border-[#DCCFC2] bg-white font-mono text-xs uppercase"
+                />
+                <p
+                  id="outlet-delete-confirm-help"
+                  className="text-[11px] text-[#87796C]"
+                >
+                  The server re-checks this code and the blocker list, so a
+                  request that does not match is rejected.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="outlet-delete-reason" className="text-xs">
+                  Reason <span className="text-[#A29A92]">(optional)</span>
+                </Label>
+                <Input
+                  id="outlet-delete-reason"
+                  value={reason}
+                  maxLength={240}
+                  onChange={e => setReason(e.target.value)}
+                  placeholder="Closed permanently, merged into Jmp"
+                  className="h-9 border-[#DCCFC2] bg-[#FCFAF6] text-xs"
+                />
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </AlertDialogBody>
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={remove.isPending}>
@@ -340,7 +351,7 @@ export function OutletDeleteDialog({
           </AlertDialogCancel>
           {!notDeletable && (
             <AlertDialogAction
-              className="bg-[#B83D29] hover:bg-[#962C20]"
+              className={dialogDangerAction}
               disabled={!canSubmit}
               onClick={event => {
                 // The dialog must stay mounted through the mutation so the

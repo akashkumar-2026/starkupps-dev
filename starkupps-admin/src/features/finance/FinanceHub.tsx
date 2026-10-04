@@ -1,14 +1,7 @@
 import { inr } from "@/utils/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -420,68 +413,52 @@ function RefundsTab() {
           </table>
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>Request refund</DialogTitle>
-            <DialogDescription>
-              Idempotent: one requested per order.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Order ID</span>
-              <Input
-                value={form.orderId}
-                onChange={e => setForm({ ...form, orderId: e.target.value })}
-                placeholder="e.g. 42"
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Amount (₹)</span>
-              <Input
-                type="number"
-                value={form.amount}
-                onChange={e => setForm({ ...form, amount: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Reason</span>
-              <Textarea
-                value={form.reason}
-                onChange={e => setForm({ ...form, reason: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (
-                  !form.orderId ||
-                  !form.amount ||
-                  form.reason.trim().length < 3
-                )
-                  return toast.error("Fill fields");
-                create.mutate({
-                  orderId: Number(form.orderId),
-                  amount: Number(form.amount),
-                  reason: form.reason.trim(),
-                });
-              }}
-              disabled={create.isPending}
-              className="bg-[#211B18] text-white"
-            >
-              Request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Request refund"
+        description="Idempotent: one requested per order."
+        onSubmit={event => {
+          event.preventDefault();
+          if (!form.orderId || !form.amount || form.reason.trim().length < 3)
+            return toast.error("Fill fields");
+          create.mutate({
+            orderId: Number(form.orderId),
+            amount: Number(form.amount),
+            reason: form.reason.trim(),
+          });
+        }}
+        submitLabel="Request"
+        submitPending={create.isPending}
+        formClassName="grid gap-3"
+      >
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Order ID</span>
+          <Input
+            value={form.orderId}
+            onChange={e => setForm({ ...form, orderId: e.target.value })}
+            placeholder="e.g. 42"
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Amount (₹)</span>
+          <Input
+            type="number"
+            value={form.amount}
+            onChange={e => setForm({ ...form, amount: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Reason</span>
+          <Textarea
+            value={form.reason}
+            onChange={e => setForm({ ...form, reason: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+      </FormDialog>
     </section>
   );
 }
@@ -600,140 +577,124 @@ function ExpensesTab({ outletId }: { outletId: number | null }) {
           </table>
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>Add expense</DialogTitle>
-            <DialogDescription>
-              Historical records are never silently overwritten.
-            </DialogDescription>
-          </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="outletId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Outlet</FormLabel>
-                    <Select
-                      value={field.value ?? ""}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="bg-white">
-                          <SelectValue placeholder="Global" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="">Global</SelectItem>
-                        {outlets.data?.items.map((o: any) => (
-                          <SelectItem key={o.id} value={String(o.id)}>
-                            {o.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="ingredients">Ingredients</SelectItem>
-                        <SelectItem value="rent">Rent</SelectItem>
-                        <SelectItem value="electricity">Electricity</SelectItem>
-                        <SelectItem value="salaries">Salaries</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount (₹)</FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} className="bg-white" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} className="bg-white" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="vendor"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
-                    <FormLabel>Vendor</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="bg-white" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea {...field} className="bg-white" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <DialogFooter className="sm:col-span-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpen(false)}
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        size="xl"
+        title="Add expense"
+        description="Historical records are never silently overwritten."
+        onSubmit={onSubmit}
+        submitLabel={create.isPending ? "Saving…" : "Save"}
+        submitPending={create.isPending}
+        formClassName="grid gap-3 sm:grid-cols-2"
+      >
+        <Form {...form}>
+          <FormField
+            control={form.control}
+            name="outletId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Outlet</FormLabel>
+                <Select
+                  value={field.value ?? ""}
+                  onValueChange={field.onChange}
                 >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={create.isPending}
-                  className="bg-[#211B18] text-white"
-                >
-                  {create.isPending ? "Saving…" : "Save"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
+                  <FormControl>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Global" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">Global</SelectItem>
+                    {outlets.data?.items.map((o: any) => (
+                      <SelectItem key={o.id} value={String(o.id)}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Category</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="ingredients">Ingredients</SelectItem>
+                    <SelectItem value="rent">Rent</SelectItem>
+                    <SelectItem value="electricity">Electricity</SelectItem>
+                    <SelectItem value="salaries">Salaries</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="amount"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Amount (₹)</FormLabel>
+                <FormControl>
+                  <Input type="number" {...field} className="bg-white" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Date</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} className="bg-white" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="vendor"
+            render={({ field }) => (
+              <FormItem className="sm:col-span-2">
+                <FormLabel>Vendor</FormLabel>
+                <FormControl>
+                  <Input {...field} className="bg-white" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem className="sm:col-span-2">
+                <FormLabel>Description</FormLabel>
+                <FormControl>
+                  <Textarea {...field} className="bg-white" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </Form>
+      </FormDialog>
     </section>
   );
 }
@@ -817,119 +778,98 @@ function TaxesTab() {
           ))}
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>New tax</DialogTitle>
-            <DialogDescription>
-              Centralized rate used by every sales channel.
-            </DialogDescription>
-          </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={onSubmit} className="grid gap-3">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="bg-white" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Type</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="gst">GST</SelectItem>
-                        <SelectItem value="service_charge">
-                          Service charge
-                        </SelectItem>
-                        <SelectItem value="packaging_charge">
-                          Packaging
-                        </SelectItem>
-                        <SelectItem value="delivery_charge">
-                          Delivery
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="rate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Rate %</FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} className="bg-white" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="outletId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Outlet (optional)</FormLabel>
-                    <Select
-                      value={field.value ?? ""}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="bg-white">
-                          <SelectValue placeholder="Global" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="">Global</SelectItem>
-                        {outlets.data?.items.map((o: any) => (
-                          <SelectItem key={o.id} value={String(o.id)}>
-                            {o.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpen(false)}
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New tax"
+        description="Centralized rate used by every sales channel."
+        onSubmit={onSubmit}
+        submitLabel={create.isPending ? "Creating…" : "Create"}
+        submitPending={create.isPending}
+        formClassName="grid gap-3"
+      >
+        <Form {...form}>
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Name</FormLabel>
+                <FormControl>
+                  <Input {...field} className="bg-white" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Type</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="gst">GST</SelectItem>
+                    <SelectItem value="service_charge">
+                      Service charge
+                    </SelectItem>
+                    <SelectItem value="packaging_charge">Packaging</SelectItem>
+                    <SelectItem value="delivery_charge">Delivery</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="rate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Rate %</FormLabel>
+                <FormControl>
+                  <Input type="number" {...field} className="bg-white" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="outletId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Outlet (optional)</FormLabel>
+                <Select
+                  value={field.value ?? ""}
+                  onValueChange={field.onChange}
                 >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={create.isPending}
-                  className="bg-[#211B18] text-white"
-                >
-                  {create.isPending ? "Creating…" : "Create"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
+                  <FormControl>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Global" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">Global</SelectItem>
+                    {outlets.data?.items.map((o: any) => (
+                      <SelectItem key={o.id} value={String(o.id)}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </Form>
+      </FormDialog>
     </section>
   );
 }

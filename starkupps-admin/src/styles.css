@@ -36,6 +36,16 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  /* Dialog chrome. Every modal in the app reads these instead of restating
+     hex values, so the shell stays identical across features. */
+  --color-dialog: var(--dialog);
+  --color-dialog-foreground: var(--dialog-foreground);
+  --color-dialog-border: var(--dialog-border);
+  --color-dialog-divider: var(--dialog-divider);
+  --color-dialog-ink: var(--dialog-ink);
+  --color-dialog-accent: var(--dialog-accent);
+  --color-dialog-danger: var(--dialog-danger);
+  --color-dialog-muted: var(--dialog-muted);
 }
 
 :root {
@@ -68,6 +78,52 @@
   --sidebar-accent-foreground: oklch(0.97 0.01 78);
   --sidebar-border: oklch(0.28 0.02 52);
   --sidebar-ring: oklch(0.61 0.18 31);
+
+  /* Dialog surface + chrome. */
+  --dialog: #fcfaf6;
+  --dialog-foreground: oklch(0.22 0.018 52);
+  --dialog-border: #e4dcd1;
+  --dialog-divider: #e7ded4;
+  --dialog-ink: #211b18;
+  --dialog-accent: #a83825;
+  --dialog-danger: #b83d29;
+  --dialog-muted: #87796c;
+
+  /* Dialog rhythm. `clamp` keeps one token doing the responsive work: full
+     padding on desktop, thumb-friendly padding on a phone. */
+  --dialog-pad-x: clamp(1rem, 3.5vw, 1.5rem);
+  --dialog-pad-body-y: clamp(1rem, 2.5vw, 1.25rem);
+  --dialog-pad-header-y: clamp(0.75rem, 2vw, 1rem);
+  --dialog-pad-footer-y: clamp(0.75rem, 2vw, 1rem);
+  /* Header reserves this much on its trailing edge so a long title wraps
+     instead of running under the close button. */
+  --dialog-close-gutter: 2.75rem;
+  --dialog-close-offset: 0.75rem;
+
+  /* The shell never scrolls; only DialogBody does. `vh` first as the baseline,
+     `dvh` behind @supports so a mobile URL bar collapsing cannot clip the
+     footer. Capped so a dialog does not stretch across a tall monitor. */
+  --dialog-max-height: min(calc(100vh - 2rem), 56rem);
+}
+
+/* Phones give the shell almost the whole viewport, which is what makes long
+   forms usable one-handed. */
+@media (max-width: 639px) {
+  :root {
+    --dialog-max-height: calc(100vh - 1rem);
+  }
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --dialog-max-height: min(calc(100dvh - 2rem), 56rem);
+  }
+
+  @media (max-width: 639px) {
+    :root {
+      --dialog-max-height: calc(100dvh - 1rem);
+    }
+  }
 }
 
 @layer base {
@@ -122,6 +178,54 @@
       18px 18px,
       23px 23px;
   }
+}
+
+/*
+ * The single scrollbar-hiding utility in the app.
+ *
+ * Firefox and legacy Edge honour `scrollbar-width`; WebKit/Blink only expose the
+ * pseudo-element, so both are set; `-ms-overflow-style` covers old Edge. Nothing
+ * here disables scrolling — wheel, trackpad, touch and keyboard all keep working,
+ * only the painted scrollbar is removed.
+ */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    width: none;
+    height: none;
+    display: none;
+  }
+}
+
+/*
+ * Scroll affordance for a region whose scrollbar is hidden.
+ *
+ * The two flat gradients are painted `local`, so they travel with the content
+ * and uncover the two `scroll` shadows pinned to the top and bottom edges. The
+ * result: a hairline appears only while there is more content in that direction
+ * and disappears at the ends. No JS, no listeners, and it cannot fight a nested
+ * scroll container.
+ */
+@utility scroll-shadow-y {
+  background-image:
+    linear-gradient(to bottom, var(--dialog), transparent),
+    linear-gradient(to top, var(--dialog), transparent),
+    linear-gradient(to bottom, oklch(0.22 0.018 52 / 0.09), transparent),
+    linear-gradient(to top, oklch(0.22 0.018 52 / 0.09), transparent);
+  background-position:
+    0 0,
+    0 100%,
+    0 0,
+    0 100%;
+  background-size:
+    100% 1.25rem,
+    100% 1.25rem,
+    100% 0.625rem,
+    100% 0.625rem;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }
 
 @media (prefers-reduced-motion: no-preference) {

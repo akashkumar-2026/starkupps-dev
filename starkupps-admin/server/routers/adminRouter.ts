@@ -12,6 +12,7 @@ import {
   roleCan,
 } from "../db/index";
 import { protectedProcedure, router } from "../lib/trpc";
+import { computeOrderQuote, resolveChargeConfig } from "./publicRouter";
 import { getSql, getSupabaseAdmin } from "../db/supabase";
 import { ENV } from "../config/env";
 import {
@@ -970,6 +971,14 @@ export const adminRouter = router({
             .object({
               name: z.string().trim().min(1).max(160).nullable(),
               phone: z.string().trim().min(8).max(32).nullable(),
+              /**
+               * Delivery address for walk-in/phone deliveries.
+               *
+               * Added because this path could previously create a delivery
+               * ticket with nowhere to record where it was going, so the Admin
+               * ticket rendered "Not recorded" for every counter delivery.
+               */
+              address: z.string().trim().max(1_000).nullable().optional(),
             })
             .nullable(),
           notes: z.string().trim().max(1_000).nullable(),
@@ -1050,13 +1059,65 @@ export const adminRouter = router({
           .from("shifts")
           .select("id")
           .eq("active", true)
-          .order("startedAt", { ascending: false })
+          .order("createdAt", { ascending: false })
           .limit(1);
         const activeShift = (activeShiftData?.[0] as any) ?? null;
-        const subtotal = input.items.reduce(
+
+        /**
+         * Server-authoritative charges, using the same quote engine the
+         * storefront orders through.
+         *
+         * This path used to hardcode `total = subtotal`, so a delivery recorded
+         * at the counter was billed the items total with no delivery fee or
+         * packing — while the identical order placed on the website paid both.
+         * The same order therefore cost the customer two different amounts
+         * depending on who typed it in, and the Admin ticket showed a total that
+         * did not reconcile against its own line items.
+         *
+         * Line totals stay staff-entered on purpose: this dialog is for
+         * walk-ins and phone orders, where the item may not be on the menu at all
+         * (`menuItemId` is null). Repricing them from the catalogue would make
+         * those orders unrepresentable. What *is* authoritative is the charge
+         * layer, which depends only on the order type and the outlet's
+         * configuration — not on what the customer was quoted.
+         */
+        const { data: outletForCharges } = await supabase
+          .from("outlets")
+          .select("*")
+          .eq("id", outletId)
+          .limit(1)
+          .maybeSingle();
+        const chargeConfig = await resolveChargeConfig(
+          supabase,
+          outletForCharges ?? { id: outletId }
+        );
+        const subtotalRaw = input.items.reduce(
           (sum, item) => sum + item.lineTotal,
           0
         );
+        const subtotal = Math.round(subtotalRaw * 100) / 100;
+        const quote = computeOrderQuote({
+          type: input.type,
+          // No coupon can be applied to a counter ticket, so taxable is the
+          // item total. This keeps the stored arithmetic identical in shape to a
+          // website order: total = subtotal - discount + chargesTotal.
+          taxable: subtotal,
+          ...chargeConfig,
+        });
+        const total = quote.total;
+
+        // A delivery ticket with no address is undispatchable, and this dialog
+        // is how phone and counter deliveries get recorded. Rejecting it here is
+        // far better than persisting a ticket the rider cannot act on — and it
+        // matches what the website checkout already enforces. Warning instead
+        // would just move the failure to the road.
+        const deliveryAddress = input.customer?.address?.trim() || null;
+        if (input.type === "delivery" && !deliveryAddress) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Enter a delivery address for this ticket.",
+          });
+        }
         const status = settings.autoAcceptOrders
           ? ("preparing" as const)
           : ("new" as const);
@@ -1086,8 +1147,12 @@ export const adminRouter = router({
               }
             }
             const orderRows: any[] = await tx`
-            INSERT INTO "orders" ("orderNumber","customerId","outletId","shiftId","type","status","subtotal","total","paymentStatus","notes")
-            VALUES (${input.orderNumber}, ${customerId}, ${outletId}, ${activeShift?.id ?? null}, ${input.type}, ${status}, ${subtotal}, ${subtotal}, 'unpaid', ${input.notes})
+            INSERT INTO "orders" ("orderNumber","customerId","outletId","shiftId","type","source","status","subtotal","total","paymentStatus","notes","customerName","customerPhone","deliveryAddress","packingCharge","deliveryFee","taxAmount","taxBreakdown","chargesTotal")
+            VALUES (${input.orderNumber}, ${customerId}, ${outletId}, ${activeShift?.id ?? null}, ${input.type}, 'admin', ${status}, ${subtotal}, ${total}, 'unpaid', ${input.notes},
+                    ${input.customer?.name ?? null}, ${input.customer?.phone ?? null},
+                    ${deliveryAddress},
+                    ${quote.packing.toFixed(2)}, ${quote.delivery.toFixed(2)}, ${quote.tax.toFixed(2)},
+                    ${tx.json(quote.taxLines)}, ${quote.chargesTotal.toFixed(2)})
             RETURNING "id"`;
             const newId = Number(orderRows[0].id);
             for (const item of input.items) {

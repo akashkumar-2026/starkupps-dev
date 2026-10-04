@@ -13,16 +13,7 @@ import { trpc } from "@/api/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/shared/dialog";
 import { useAuth } from "@/state/auth-provider";
 
 type SessionRow = {
@@ -292,50 +283,29 @@ export default function SecuritySessionsPage() {
         </div>
       </div>
 
-      <AlertDialog
+      <ConfirmDialog
         open={pendingRevoke !== null}
         onOpenChange={o => !o && setPendingRevoke(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sign out this device?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingRevoke?.deviceLabel || "That device"} will be signed out
-              immediately and will need to sign in again. Any other devices stay
-              signed in.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingRevoke)
-                  revoke.mutate({ sessionId: pendingRevoke.id });
-              }}
-            >
-              Sign out device
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Sign out this device?"
+        description={`${pendingRevoke?.deviceLabel || "That device"} will be signed out immediately and will need to sign in again. Any other devices stay signed in.`}
+        confirmLabel="Sign out device"
+        size="md"
+        pending={revoke.isPending}
+        onConfirm={() => {
+          if (pendingRevoke) revoke.mutate({ sessionId: pendingRevoke.id });
+        }}
+      />
 
-      <AlertDialog open={confirmAll} onOpenChange={setConfirmAll}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sign out of all other devices?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Every other signed-in device, including remembered ones, will need
-              to sign in again. This device stays signed in.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => revokeOthers.mutate()}>
-              Sign out other devices
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmAll}
+        onOpenChange={setConfirmAll}
+        title="Sign out of all other devices?"
+        description="Every other signed-in device, including remembered ones, will need to sign in again. This device stays signed in."
+        confirmLabel="Sign out other devices"
+        size="md"
+        pending={revokeOthers.isPending}
+        onConfirm={() => revokeOthers.mutate()}
+      />
     </div>
   );
 }

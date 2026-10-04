@@ -31,17 +31,17 @@ describe("composeAddress", () => {
     // Nominatim returns different key sets by settlement type; a village may
     // have `village` and no `city`, a hamlet neither.
     expect(composeAddress({ village: "Bandar", state: "Bihar" })).toBe(
-      "Bandar, Bihar",
+      "Bandar, Bihar"
     );
     expect(composeAddress({ town: "Kadamkuan", state: "Bihar" })).toBe(
-      "Kadamkuan, Bihar",
+      "Kadamkuan, Bihar"
     );
   });
 
   it("keeps the road when there is no house number", () => {
     // Common on rural addresses, and better than dropping the street entirely.
     expect(composeAddress({ road: "NH-107", village: "Islampur" })).toBe(
-      "NH-107, Islampur",
+      "NH-107, Islampur"
     );
   });
 
@@ -49,7 +49,7 @@ describe("composeAddress", () => {
     // Nominatim often fills `city`, `town` and `municipality` with the same
     // string; without de-duplication the field reads "Munger, Munger, Munger".
     expect(
-      composeAddress({ city: "Munger", town: "Munger", municipality: "Munger" }),
+      composeAddress({ city: "Munger", town: "Munger", municipality: "Munger" })
     ).toBe("Munger");
   });
 
@@ -64,7 +64,7 @@ describe("composeAddress", () => {
 
   it("skips blank and whitespace-only components", () => {
     expect(
-      composeAddress({ house_number: "  ", road: "Station Road", city: "" }),
+      composeAddress({ house_number: "  ", road: "Station Road", city: "" })
     ).toBe("Station Road");
   });
 

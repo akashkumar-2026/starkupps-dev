@@ -1,12 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -137,94 +131,83 @@ function BlocksTab() {
           ))}
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>New content block</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Page</span>
-              <Input
-                value={form.page}
-                onChange={e => setForm({ ...form, page: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Key</span>
-              <Input
-                value={form.key}
-                onChange={e => setForm({ ...form, key: e.target.value })}
-                placeholder="hero_heading"
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Title</span>
-              <Input
-                value={form.title}
-                onChange={e => setForm({ ...form, title: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Description</span>
-              <Textarea
-                value={form.description}
-                onChange={e =>
-                  setForm({ ...form, description: e.target.value })
-                }
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Status</span>
-              <Select
-                value={form.status}
-                onValueChange={v => setForm({ ...form, status: v as any })}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="published">Published</SelectItem>
-                  <SelectItem value="scheduled">Scheduled</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!form.key.trim() || !form.page.trim())
-                  return toast.error("Page & key required");
-                create.mutate({
-                  page: form.page.trim(),
-                  key: form.key.trim(),
-                  title: form.title.trim() || null,
-                  description: form.description.trim() || null,
-                  imageUrl: form.imageUrl.trim() || null,
-                  ctaLabel: null,
-                  ctaLink: null,
-                  position: 0,
-                  status: form.status,
-                  publishAt: null,
-                });
-              }}
-              disabled={create.isPending}
-              className="bg-[#211B18] text-white"
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New content block"
+        description="A reusable page section rendered by the storefront."
+        onSubmit={event => {
+          event.preventDefault();
+          if (!form.key.trim() || !form.page.trim())
+            return toast.error("Page & key required");
+          create.mutate({
+            page: form.page.trim(),
+            key: form.key.trim(),
+            title: form.title.trim() || null,
+            description: form.description.trim() || null,
+            imageUrl: form.imageUrl.trim() || null,
+            ctaLabel: null,
+            ctaLink: null,
+            position: 0,
+            status: form.status,
+            publishAt: null,
+          });
+        }}
+        submitLabel="Create"
+        submitPending={create.isPending}
+        formClassName="grid gap-3"
+      >
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Page</span>
+          <Input
+            value={form.page}
+            onChange={e => setForm({ ...form, page: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Key</span>
+          <Input
+            value={form.key}
+            onChange={e => setForm({ ...form, key: e.target.value })}
+            placeholder="hero_heading"
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Title</span>
+          <Input
+            value={form.title}
+            onChange={e => setForm({ ...form, title: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Description</span>
+          <Textarea
+            value={form.description}
+            onChange={e => setForm({ ...form, description: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Status</span>
+          <Select
+            value={form.status}
+            onValueChange={v => setForm({ ...form, status: v as any })}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="published">Published</SelectItem>
+              <SelectItem value="scheduled">Scheduled</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+      </FormDialog>
     </section>
   );
 }
@@ -341,52 +324,43 @@ function FaqsTab() {
           ))}
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>New FAQ</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Question</span>
-              <Input
-                value={form.question}
-                onChange={e => setForm({ ...form, question: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Answer</span>
-              <Textarea
-                value={form.answer}
-                onChange={e => setForm({ ...form, answer: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!form.question.trim() || !form.answer.trim())
-                  return toast.error("Fill fields");
-                create.mutate({
-                  question: form.question.trim(),
-                  answer: form.answer.trim(),
-                  position: 0,
-                  active: true,
-                });
-              }}
-              disabled={create.isPending}
-              className="bg-[#211B18] text-white"
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New FAQ"
+        description="Question and answer pair shown in the storefront help section."
+        onSubmit={event => {
+          event.preventDefault();
+          if (!form.question.trim() || !form.answer.trim())
+            return toast.error("Fill fields");
+          create.mutate({
+            question: form.question.trim(),
+            answer: form.answer.trim(),
+            position: 0,
+            active: true,
+          });
+        }}
+        submitLabel="Create"
+        submitPending={create.isPending}
+        formClassName="grid gap-3"
+      >
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Question</span>
+          <Input
+            value={form.question}
+            onChange={e => setForm({ ...form, question: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Answer</span>
+          <Textarea
+            value={form.answer}
+            onChange={e => setForm({ ...form, answer: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+      </FormDialog>
     </section>
   );
 }
@@ -446,64 +420,55 @@ function TestimonialsTab() {
           ))}
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>New testimonial</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Author</span>
-              <Input
-                value={form.authorName}
-                onChange={e => setForm({ ...form, authorName: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Content</span>
-              <Textarea
-                value={form.content}
-                onChange={e => setForm({ ...form, content: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Rating</span>
-              <Input
-                type="number"
-                min={1}
-                max={5}
-                value={form.rating}
-                onChange={e => setForm({ ...form, rating: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!form.authorName.trim() || !form.content.trim())
-                  return toast.error("Fill fields");
-                create.mutate({
-                  authorName: form.authorName.trim(),
-                  authorRole: null,
-                  content: form.content.trim(),
-                  rating: Number(form.rating),
-                  active: true,
-                });
-              }}
-              disabled={create.isPending}
-              className="bg-[#211B18] text-white"
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New testimonial"
+        description="Customer quote shown on the storefront landing page."
+        onSubmit={event => {
+          event.preventDefault();
+          if (!form.authorName.trim() || !form.content.trim())
+            return toast.error("Fill fields");
+          create.mutate({
+            authorName: form.authorName.trim(),
+            authorRole: null,
+            content: form.content.trim(),
+            rating: Number(form.rating),
+            active: true,
+          });
+        }}
+        submitLabel="Create"
+        submitPending={create.isPending}
+        formClassName="grid gap-3"
+      >
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Author</span>
+          <Input
+            value={form.authorName}
+            onChange={e => setForm({ ...form, authorName: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Content</span>
+          <Textarea
+            value={form.content}
+            onChange={e => setForm({ ...form, content: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Rating</span>
+          <Input
+            type="number"
+            min={1}
+            max={5}
+            value={form.rating}
+            onChange={e => setForm({ ...form, rating: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+      </FormDialog>
     </section>
   );
 }

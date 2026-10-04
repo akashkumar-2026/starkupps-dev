@@ -1,14 +1,5 @@
 import { trpc } from "@/api/trpc";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/shared/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -387,57 +378,33 @@ export default function MenuPage() {
           void utils.admin.menu.list.invalidate();
         }}
       />
-      <AlertDialog
+      <ConfirmDialog
         open={Boolean(removeItem)}
         onOpenChange={o => !o && setRemoveItem(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {removeItem?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently removes the item.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep item</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-[#B83D29] hover:bg-[#962C20]"
-              onClick={() => removeItem && remove.mutate({ id: removeItem.id })}
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
+        title={`Remove ${removeItem?.name}?`}
+        description="This permanently removes the item."
+        confirmLabel="Remove"
+        cancelLabel="Keep item"
+        destructive
+        pending={remove.isPending}
+        onConfirm={() => {
+          if (removeItem) remove.mutate({ id: removeItem.id });
+        }}
+      />
+      <ConfirmDialog
         open={Boolean(removeCategory)}
         onOpenChange={o => !o && setRemoveCategory(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Remove category {removeCategory?.name}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the category. Categories containing
-              items cannot be deleted — move or delete those items first. Only
-              owners can delete categories.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep category</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-[#B83D29] hover:bg-[#962C20]"
-              onClick={() => {
-                const c = removeCategory;
-                if (c) removeCategoryMut.mutate({ id: c.id });
-              }}
-            >
-              {removeCategoryMut.isPending ? "Removing…" : "Remove"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={`Remove category ${removeCategory?.name}?`}
+        description="This will permanently delete the category. Categories containing items cannot be deleted — move or delete those items first. Only owners can delete categories."
+        confirmLabel="Remove"
+        cancelLabel="Keep category"
+        destructive
+        pending={removeCategoryMut.isPending}
+        onConfirm={() => {
+          const c = removeCategory;
+          if (c) removeCategoryMut.mutate({ id: c.id });
+        }}
+      />
     </>
   );
 }

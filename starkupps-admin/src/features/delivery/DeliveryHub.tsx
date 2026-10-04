@@ -1,13 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -204,51 +197,35 @@ function LiveTab({ outletId }: { outletId: number | null }) {
           </table>
         </div>
       )}
-      <Dialog
+      <FormDialog
         open={assignFor !== null}
         onOpenChange={o => !o && setAssignFor(null)}
+        title="Assign rider"
+        description="Centralized dispatch — no duplicate logic."
+        onSubmit={event => {
+          event.preventDefault();
+          if (!riderId || assignFor === null)
+            return toast.error("Select rider");
+          assign.mutate({ deliveryId: assignFor, riderId: Number(riderId) });
+          setAssignFor(null);
+          setRiderId("");
+        }}
+        submitLabel="Assign"
+        submitPending={assign.isPending}
       >
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>Assign rider</DialogTitle>
-            <DialogDescription>
-              Centralized dispatch — no duplicate logic.
-            </DialogDescription>
-          </DialogHeader>
-          <Select value={riderId} onValueChange={setRiderId}>
-            <SelectTrigger className="bg-white">
-              <SelectValue placeholder="Select available rider" />
-            </SelectTrigger>
-            <SelectContent>
-              {(riders.data ?? []).map((r: any) => (
-                <SelectItem key={r.id} value={String(r.id)}>
-                  {r.name} — {r.phone} ({r.status})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignFor(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!riderId || assignFor === null)
-                  return toast.error("Select rider");
-                assign.mutate({
-                  deliveryId: assignFor,
-                  riderId: Number(riderId),
-                });
-                setAssignFor(null);
-                setRiderId("");
-              }}
-              className="bg-[#211B18] text-white"
-            >
-              Assign
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <Select value={riderId} onValueChange={setRiderId}>
+          <SelectTrigger className="bg-white">
+            <SelectValue placeholder="Select available rider" />
+          </SelectTrigger>
+          <SelectContent>
+            {(riders.data ?? []).map((r: any) => (
+              <SelectItem key={r.id} value={String(r.id)}>
+                {r.name} — {r.phone} ({r.status})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FormDialog>
     </section>
   );
 }
@@ -382,90 +359,81 @@ function RidersTab({ outletId }: { outletId: number | null }) {
           ))}
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>New rider</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Outlet</span>
-              <Select
-                value={form.outletId}
-                onValueChange={v => setForm({ ...form, outletId: v })}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {outlets.data?.items.map((o: any) => (
-                    <SelectItem key={o.id} value={String(o.id)}>
-                      {o.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Name</span>
-              <Input
-                value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Phone</span>
-              <Input
-                value={form.phone}
-                onChange={e => setForm({ ...form, phone: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Vehicle</span>
-              <Select
-                value={form.vehicle}
-                onValueChange={v => setForm({ ...form, vehicle: v as any })}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bike">Bike</SelectItem>
-                  <SelectItem value="scooter">Scooter</SelectItem>
-                  <SelectItem value="bicycle">Bicycle</SelectItem>
-                  <SelectItem value="car">Car</SelectItem>
-                  <SelectItem value="walk">Walk</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!form.name.trim() || !form.phone.trim())
-                  return toast.error("Name & phone required");
-                if (!form.outletId) return toast.error("Outlet required");
-                create.mutate({
-                  outletId: Number(form.outletId),
-                  name: form.name.trim(),
-                  phone: form.phone.trim(),
-                  vehicle: form.vehicle,
-                  status: form.status,
-                });
-              }}
-              disabled={create.isPending}
-              className="bg-[#211B18] text-white"
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New rider"
+        description="Riders belong to one outlet and are dispatched from the live board."
+        onSubmit={event => {
+          event.preventDefault();
+          if (!form.name.trim() || !form.phone.trim())
+            return toast.error("Name & phone required");
+          if (!form.outletId) return toast.error("Outlet required");
+          create.mutate({
+            outletId: Number(form.outletId),
+            name: form.name.trim(),
+            phone: form.phone.trim(),
+            vehicle: form.vehicle,
+            status: form.status,
+          });
+        }}
+        submitLabel="Create"
+        submitPending={create.isPending}
+        formClassName="grid gap-3"
+      >
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Outlet</span>
+          <Select
+            value={form.outletId}
+            onValueChange={v => setForm({ ...form, outletId: v })}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {outlets.data?.items.map((o: any) => (
+                <SelectItem key={o.id} value={String(o.id)}>
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Name</span>
+          <Input
+            value={form.name}
+            onChange={e => setForm({ ...form, name: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Phone</span>
+          <Input
+            value={form.phone}
+            onChange={e => setForm({ ...form, phone: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Vehicle</span>
+          <Select
+            value={form.vehicle}
+            onValueChange={v => setForm({ ...form, vehicle: v as any })}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bike">Bike</SelectItem>
+              <SelectItem value="scooter">Scooter</SelectItem>
+              <SelectItem value="bicycle">Bicycle</SelectItem>
+              <SelectItem value="car">Car</SelectItem>
+              <SelectItem value="walk">Walk</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+      </FormDialog>
     </section>
   );
 }

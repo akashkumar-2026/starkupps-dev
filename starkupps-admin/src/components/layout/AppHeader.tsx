@@ -8,6 +8,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { ViewDialog } from "@/components/shared/dialog";
 import {
   CommandDialog,
   CommandEmpty,
@@ -16,13 +17,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -275,61 +269,58 @@ function NotificationSheet({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[80vh] max-w-md overflow-hidden bg-[#FCFAF6]">
-        <DialogHeader>
-          <DialogTitle>Notifications</DialogTitle>
-          <DialogDescription className="flex items-center justify-between">
-            <span>{list.data?.unreadCount ?? 0} unread</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => markAll.mutate()}
-              disabled={markAll.isPending || !list.data?.unreadCount}
-            >
-              Mark all read
-            </Button>
-          </DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[50vh] space-y-2 overflow-auto pr-1">
-          {list.isLoading ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Loading…
-            </p>
-          ) : !list.data?.items.length ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No notifications.
-            </p>
-          ) : (
-            list.data.items.map(n => (
-              <div
-                key={n.id}
-                className="rounded-xl border border-[#E4DCD1] bg-white p-3"
-              >
-                <p className="text-sm font-semibold">{n.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {n.message}
-                </p>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[10px] text-muted-foreground">
-                    {new Date(n.createdAt).toLocaleString()}
-                  </span>
-                  {!n.readAt && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => markOne.mutate({ id: n.id })}
-                    >
-                      Mark read
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+    <ViewDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="md"
+      title="Notifications"
+      description={`${list.data?.unreadCount ?? 0} unread`}
+      headerActions={
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => markAll.mutate()}
+          disabled={markAll.isPending || !list.data?.unreadCount}
+        >
+          Mark all read
+        </Button>
+      }
+      bodyClassName="space-y-2"
+    >
+      {list.isLoading ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Loading…
+        </p>
+      ) : !list.data?.items.length ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          No notifications.
+        </p>
+      ) : (
+        list.data.items.map(n => (
+          <div
+            key={n.id}
+            className="rounded-xl border border-[#E4DCD1] bg-white p-3"
+          >
+            <p className="text-sm font-semibold">{n.title}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{n.message}</p>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground">
+                {new Date(n.createdAt).toLocaleString()}
+              </span>
+              {!n.readAt && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => markOne.mutate({ id: n.id })}
+                >
+                  Mark read
+                </Button>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+    </ViewDialog>
   );
 }

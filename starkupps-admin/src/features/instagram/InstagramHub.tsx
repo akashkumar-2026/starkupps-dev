@@ -11,16 +11,7 @@ import { apiError } from "@/utils/errors";
  * persisted through `instagram.posts.reorder`, which writes every row inside a
  * single transaction so the storefront never sees a half-applied order.
  */
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog, FormDialog } from "@/components/shared/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,14 +80,6 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -549,33 +532,21 @@ function PostListCard() {
         onSaved={() => setEditing(null)}
       />
 
-      <AlertDialog
+      <ConfirmDialog
         open={Boolean(target)}
         onOpenChange={open => {
           if (!open) setRemoveId(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Remove this {target?.type === "reel" ? "reel" : "post"}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              It disappears from the storefront feed. You can add the same link
-              again later.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-[#B83D29] hover:bg-[#962C20]"
-              onClick={() => target && remove.mutate({ id: target.id })}
-            >
-              {remove.isPending ? "Removing…" : "Remove"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={`Remove this ${target?.type === "reel" ? "reel" : "post"}?`}
+        description="It disappears from the storefront feed. You can add the same link again later."
+        confirmLabel="Remove"
+        cancelLabel="Keep it"
+        destructive
+        pending={remove.isPending}
+        onConfirm={() => {
+          if (target) remove.mutate({ id: target.id });
+        }}
+      />
     </section>
   );
 }
@@ -863,152 +834,145 @@ function EditPostDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-[#D8CDC0] bg-[#FCFAF6] sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle>Edit post</DialogTitle>
-          <DialogDescription>
-            {post ? (
-              <>
-                {post.type === "reel" ? "Reel" : "Post"} ·{" "}
-                <span className="font-mono">{post.shortcode}</span>
-              </>
-            ) : null}
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="xl"
+      title="Edit post"
+      description={
+        post ? (
+          <>
+            {post.type === "reel" ? "Reel" : "Post"} ·{" "}
+            <span className="font-mono">{post.shortcode}</span>
+          </>
+        ) : (
+          "Permalink, caption and reel preview."
+        )
+      }
+      onSubmit={event => {
+        event.preventDefault();
+        submit();
+      }}
+      submitLabel={
+        <>
+          {save.isPending ? (
+            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+          ) : null}
+          Save changes
+        </>
+      }
+      submitDisabled={!parsed.ok || clash || unchanged}
+      submitPending={save.isPending || uploadVideo.isPending}
+      isDirty={!unchanged}
+      formClassName="grid gap-3"
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="edit-ig-url">Instagram link</Label>
+        <Input
+          id="edit-ig-url"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://www.instagram.com/p/…"
+          inputMode="url"
+          spellCheck={false}
+          aria-invalid={!!url.trim() && !parsed.ok}
+          className="bg-white"
+        />
+        <p
+          className={cn(
+            "text-[11px]",
+            url.trim() && !parsed.ok
+              ? "text-[#B83D29]"
+              : clash
+                ? "text-[#8A5D10]"
+                : "text-[#827568]"
+          )}
+        >
+          {clash
+            ? "Another post already uses that permalink."
+            : url.trim() && !parsed.ok
+              ? parsed.error
+              : parsed.ok
+                ? `Will be saved as ${parsed.type}`
+                : "Posts (/p/), reels (/reel/) and IGTV (/tv/) are supported."}
+        </p>
+      </div>
 
-        <div className="grid gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-ig-url">Instagram link</Label>
-            <Input
-              id="edit-ig-url"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="https://www.instagram.com/p/…"
-              inputMode="url"
-              spellCheck={false}
-              aria-invalid={!!url.trim() && !parsed.ok}
-              className="bg-white"
-            />
-            <p
-              className={cn(
-                "text-[11px]",
-                url.trim() && !parsed.ok
-                  ? "text-[#B83D29]"
-                  : clash
-                    ? "text-[#8A5D10]"
-                    : "text-[#827568]"
-              )}
-            >
-              {clash
-                ? "Another post already uses that permalink."
-                : url.trim() && !parsed.ok
-                  ? parsed.error
-                  : parsed.ok
-                    ? `Will be saved as ${parsed.type}`
-                    : "Posts (/p/), reels (/reel/) and IGTV (/tv/) are supported."}
+      <div className="space-y-1.5">
+        <Label htmlFor="edit-ig-caption">Note for the team</Label>
+        <Textarea
+          id="edit-ig-caption"
+          value={caption}
+          onChange={e => setCaption(e.target.value)}
+          maxLength={INSTAGRAM_LIMITS.caption}
+          rows={2}
+          className="bg-white"
+        />
+      </div>
+
+      {parsed.ok && parsed.type === "reel" ? (
+        <div className="space-y-2 rounded-xl border border-[#E7DED4] bg-white p-3">
+          <div>
+            <p className="flex items-center gap-2 text-xs font-bold text-[#352A24]">
+              <Film className="h-4 w-4 text-[#A83825]" />
+              Short reel preview
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-[#827568]">
+              Optional MP4, up to 5 MB. The storefront plays it muted for 2.5
+              seconds, then opens the original Reel when tapped.
             </p>
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-ig-caption">Note for the team</Label>
-            <Textarea
-              id="edit-ig-caption"
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              maxLength={INSTAGRAM_LIMITS.caption}
-              rows={2}
-              className="bg-white"
-            />
+          <input
+            ref={previewVideoInput}
+            type="file"
+            accept="video/mp4,.mp4"
+            className="sr-only"
+            onChange={event => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) onPreviewVideo(file);
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={uploadVideo.isPending}
+              onClick={() => previewVideoInput.current?.click()}
+              className="h-8 border-[#DCCFC2] bg-white text-xs"
+            >
+              {uploadVideo.isPending ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="mr-1 h-3.5 w-3.5" />
+              )}
+              {previewVideoUrl ? "Replace preview" : "Upload preview clip"}
+            </Button>
+            {previewVideoUrl ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setPreviewVideoUrl(null)}
+                className="h-8 px-2 text-xs text-[#8D5145]"
+              >
+                <X className="mr-1 h-3.5 w-3.5" />
+                Remove
+              </Button>
+            ) : null}
           </div>
-
-          {parsed.ok && parsed.type === "reel" ? (
-            <div className="space-y-2 rounded-xl border border-[#E7DED4] bg-white p-3">
-              <div>
-                <p className="flex items-center gap-2 text-xs font-bold text-[#352A24]">
-                  <Film className="h-4 w-4 text-[#A83825]" />
-                  Short reel preview
-                </p>
-                <p className="mt-1 text-[11px] leading-5 text-[#827568]">
-                  Optional MP4, up to 5 MB. The storefront plays it muted for
-                  2.5 seconds, then opens the original Reel when tapped.
-                </p>
-              </div>
-              <input
-                ref={previewVideoInput}
-                type="file"
-                accept="video/mp4,.mp4"
-                className="sr-only"
-                onChange={event => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) onPreviewVideo(file);
-                }}
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={uploadVideo.isPending}
-                  onClick={() => previewVideoInput.current?.click()}
-                  className="h-8 border-[#DCCFC2] bg-white text-xs"
-                >
-                  {uploadVideo.isPending ? (
-                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="mr-1 h-3.5 w-3.5" />
-                  )}
-                  {previewVideoUrl ? "Replace preview" : "Upload preview clip"}
-                </Button>
-                {previewVideoUrl ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setPreviewVideoUrl(null)}
-                    className="h-8 px-2 text-xs text-[#8D5145]"
-                  >
-                    <X className="mr-1 h-3.5 w-3.5" />
-                    Remove
-                  </Button>
-                ) : null}
-              </div>
-              {previewVideoUrl ? (
-                <video
-                  src={previewVideoUrl}
-                  controls
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="max-h-48 w-full rounded-lg bg-black object-contain"
-                />
-              ) : null}
-            </div>
+          {previewVideoUrl ? (
+            <video
+              src={previewVideoUrl}
+              controls
+              muted
+              playsInline
+              preload="metadata"
+              className="max-h-48 w-full rounded-lg bg-black object-contain"
+            />
           ) : null}
         </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={
-              save.isPending ||
-              uploadVideo.isPending ||
-              !parsed.ok ||
-              clash ||
-              unchanged
-            }
-            className="bg-[#211B18] text-xs text-white hover:bg-[#3A2D27]"
-          >
-            {save.isPending ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : null}
-            Save changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      ) : null}
+    </FormDialog>
   );
 }
 

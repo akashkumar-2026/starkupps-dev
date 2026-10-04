@@ -1,13 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -263,114 +256,99 @@ function TicketList() {
           </Button>
         </div>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>New ticket</DialogTitle>
-            <DialogDescription>
-              Ticket number is auto-generated.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Outlet</span>
-              <Select
-                value={form.outletId}
-                onValueChange={v => setForm({ ...form, outletId: v })}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {outlets.data?.items.map((o: any) => (
-                    <SelectItem key={o.id} value={String(o.id)}>
-                      {o.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Subject</span>
-              <Input
-                value={form.subject}
-                onChange={e => setForm({ ...form, subject: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Category</span>
-              <Select
-                value={form.category}
-                onValueChange={v => setForm({ ...form, category: v as any })}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="general">General</SelectItem>
-                  <SelectItem value="order_issue">Order issue</SelectItem>
-                  <SelectItem value="refund_request">Refund request</SelectItem>
-                  <SelectItem value="complaint">Complaint</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Priority</span>
-              <Select
-                value={form.priority}
-                onValueChange={v => setForm({ ...form, priority: v as any })}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="urgent">Urgent</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Message</span>
-              <Textarea
-                value={form.message}
-                onChange={e => setForm({ ...form, message: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (
-                  form.subject.trim().length < 5 ||
-                  form.message.trim().length < 5
-                )
-                  return toast.error("Subject & message required");
-                create.mutate({
-                  customerId: null,
-                  orderId: null,
-                  outletId: form.outletId ? Number(form.outletId) : null,
-                  category: form.category,
-                  priority: form.priority,
-                  subject: form.subject.trim(),
-                  message: form.message.trim(),
-                });
-              }}
-              className="bg-[#211B18] text-white"
-              disabled={create.isPending}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New ticket"
+        description="Ticket number is auto-generated."
+        onSubmit={event => {
+          event.preventDefault();
+          if (form.subject.trim().length < 5 || form.message.trim().length < 5)
+            return toast.error("Subject & message required");
+          create.mutate({
+            customerId: null,
+            orderId: null,
+            outletId: form.outletId ? Number(form.outletId) : null,
+            category: form.category,
+            priority: form.priority,
+            subject: form.subject.trim(),
+            message: form.message.trim(),
+          });
+        }}
+        submitLabel="Create"
+        submitPending={create.isPending}
+        formClassName="grid gap-3"
+      >
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Outlet</span>
+          <Select
+            value={form.outletId}
+            onValueChange={v => setForm({ ...form, outletId: v })}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">None</SelectItem>
+              {outlets.data?.items.map((o: any) => (
+                <SelectItem key={o.id} value={String(o.id)}>
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Subject</span>
+          <Input
+            value={form.subject}
+            onChange={e => setForm({ ...form, subject: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Category</span>
+          <Select
+            value={form.category}
+            onValueChange={v => setForm({ ...form, category: v as any })}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="general">General</SelectItem>
+              <SelectItem value="order_issue">Order issue</SelectItem>
+              <SelectItem value="refund_request">Refund request</SelectItem>
+              <SelectItem value="complaint">Complaint</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Priority</span>
+          <Select
+            value={form.priority}
+            onValueChange={v => setForm({ ...form, priority: v as any })}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="normal">Normal</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="urgent">Urgent</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Message</span>
+          <Textarea
+            value={form.message}
+            onChange={e => setForm({ ...form, message: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+      </FormDialog>
     </>
   );
 }

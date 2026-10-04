@@ -1,13 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -622,242 +615,222 @@ function StaffCreateDialog({
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!form.name.trim() || !form.email.trim() || !form.primaryOutletId)
+      return toast.error("Name, email, primary outlet required");
+    create.mutate({
+      name: form.name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim() || null,
+      role: form.role,
+      employmentType: form.employmentType,
+      joiningDate: form.joiningDate || null,
+      primaryOutletId: Number(form.primaryOutletId),
+      managerId: form.managerId ? Number(form.managerId) : null,
+      additionalOutlets: form.additionalOutlets,
+      profilePhoto: form.profilePhoto || null,
+      dateOfBirth: form.dateOfBirth || null,
+      emergencyContact: form.emergencyContact || null,
+      address: form.address || null,
+    } as any);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto bg-[#FCFAF6] sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Create Staff — Onboarding</DialogTitle>
-          <DialogDescription>
-            Personal → Employment → Role → Outlet → Permissions → Active
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <section>
-            <h4 className="text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Personal Profile
-            </h4>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Full Name *</span>
-                <Input
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Email *</span>
-                <Input
-                  value={form.email}
-                  onChange={e => setForm({ ...form, email: e.target.value })}
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Phone</span>
-                <Input
-                  value={form.phone}
-                  onChange={e => setForm({ ...form, phone: e.target.value })}
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Date of Birth</span>
-                <Input
-                  type="date"
-                  value={form.dateOfBirth}
-                  onChange={e =>
-                    setForm({ ...form, dateOfBirth: e.target.value })
-                  }
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Emergency Contact</span>
-                <Input
-                  value={form.emergencyContact}
-                  onChange={e =>
-                    setForm({ ...form, emergencyContact: e.target.value })
-                  }
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Address</span>
-                <Input
-                  value={form.address}
-                  onChange={e => setForm({ ...form, address: e.target.value })}
-                  className="bg-white"
-                />
-              </label>
-            </div>
-          </section>
-          <section>
-            <h4 className="text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Employment
-            </h4>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Employment Type</span>
-                <Select
-                  value={form.employmentType}
-                  onValueChange={v =>
-                    setForm({ ...form, employmentType: v as any })
-                  }
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="full_time">Full Time</SelectItem>
-                    <SelectItem value="part_time">Part Time</SelectItem>
-                    <SelectItem value="contract">Contract</SelectItem>
-                    <SelectItem value="temporary">Temporary</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Joining Date</span>
-                <Input
-                  type="date"
-                  value={form.joiningDate}
-                  onChange={e =>
-                    setForm({ ...form, joiningDate: e.target.value })
-                  }
-                  className="bg-white"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Role *</span>
-                <Select
-                  value={form.role}
-                  onValueChange={v => setForm({ ...form, role: v as any })}
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="staff">Staff</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="owner">Owner</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Manager</span>
-                <Select
-                  value={form.managerId}
-                  onValueChange={v => setForm({ ...form, managerId: v })}
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(managers.data?.items ?? []).map((m: any) => (
-                      <SelectItem key={m.id} value={String(m.id)}>
-                        {m.name} — {m.role}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-          </section>
-          <section>
-            <h4 className="text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
-              Outlet Assignment
-            </h4>
-            <div className="mt-2 grid gap-3">
-              <label className="space-y-1">
-                <span className="text-xs font-bold">Primary Outlet *</span>
-                <Select
-                  value={form.primaryOutletId}
-                  onValueChange={v => setForm({ ...form, primaryOutletId: v })}
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder="Select outlet" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(outlets.data?.items ?? []).map((o: any) => (
-                      <SelectItem key={o.id} value={String(o.id)}>
-                        {o.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-              <div>
-                <span className="text-xs font-bold">
-                  Additional Allowed Outlets
-                </span>
-                <div className="mt-1 max-h-24 overflow-y-auto rounded-md border bg-white p-2">
-                  {(outlets.data?.items ?? []).map((o: any) => (
-                    <label
-                      key={o.id}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.additionalOutlets.includes(o.id)}
-                        onChange={e =>
-                          setForm({
-                            ...form,
-                            additionalOutlets: e.target.checked
-                              ? [...form.additionalOutlets, o.id]
-                              : form.additionalOutlets.filter(
-                                  id => id !== o.id
-                                ),
-                          })
-                        }
-                      />
-                      {o.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="2xl"
+      title="Create Staff — Onboarding"
+      description="Personal → Employment → Role → Outlet → Permissions → Active"
+      onSubmit={submitForm}
+      submitLabel={
+        create.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          "Create Staff"
+        )
+      }
+      submitPending={create.isPending}
+      formClassName="space-y-4"
+    >
+      <section>
+        <h4 className="text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+          Personal Profile
+        </h4>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Full Name *</span>
+            <Input
+              value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })}
+              className="bg-white"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Email *</span>
+            <Input
+              value={form.email}
+              onChange={e => setForm({ ...form, email: e.target.value })}
+              className="bg-white"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Phone</span>
+            <Input
+              value={form.phone}
+              onChange={e => setForm({ ...form, phone: e.target.value })}
+              className="bg-white"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Date of Birth</span>
+            <Input
+              type="date"
+              value={form.dateOfBirth}
+              onChange={e => setForm({ ...form, dateOfBirth: e.target.value })}
+              className="bg-white"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Emergency Contact</span>
+            <Input
+              value={form.emergencyContact}
+              onChange={e =>
+                setForm({ ...form, emergencyContact: e.target.value })
+              }
+              className="bg-white"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Address</span>
+            <Input
+              value={form.address}
+              onChange={e => setForm({ ...form, address: e.target.value })}
+              className="bg-white"
+            />
+          </label>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              if (
-                !form.name.trim() ||
-                !form.email.trim() ||
-                !form.primaryOutletId
-              )
-                return toast.error("Name, email, primary outlet required");
-              create.mutate({
-                name: form.name.trim(),
-                email: form.email.trim(),
-                phone: form.phone.trim() || null,
-                role: form.role,
-                employmentType: form.employmentType,
-                joiningDate: form.joiningDate || null,
-                primaryOutletId: Number(form.primaryOutletId),
-                managerId: form.managerId ? Number(form.managerId) : null,
-                additionalOutlets: form.additionalOutlets,
-                profilePhoto: form.profilePhoto || null,
-                dateOfBirth: form.dateOfBirth || null,
-                emergencyContact: form.emergencyContact || null,
-                address: form.address || null,
-              } as any);
-            }}
-            disabled={create.isPending}
-            className="bg-[#211B18] text-white"
-          >
-            {create.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Create Staff"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </section>
+      <section>
+        <h4 className="text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+          Employment
+        </h4>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Employment Type</span>
+            <Select
+              value={form.employmentType}
+              onValueChange={v =>
+                setForm({ ...form, employmentType: v as any })
+              }
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_time">Full Time</SelectItem>
+                <SelectItem value="part_time">Part Time</SelectItem>
+                <SelectItem value="contract">Contract</SelectItem>
+                <SelectItem value="temporary">Temporary</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Joining Date</span>
+            <Input
+              type="date"
+              value={form.joiningDate}
+              onChange={e => setForm({ ...form, joiningDate: e.target.value })}
+              className="bg-white"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Role *</span>
+            <Select
+              value={form.role}
+              onValueChange={v => setForm({ ...form, role: v as any })}
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="staff">Staff</SelectItem>
+                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="owner">Owner</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Manager</span>
+            <Select
+              value={form.managerId}
+              onValueChange={v => setForm({ ...form, managerId: v })}
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                {(managers.data?.items ?? []).map((m: any) => (
+                  <SelectItem key={m.id} value={String(m.id)}>
+                    {m.name} — {m.role}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      </section>
+      <section>
+        <h4 className="text-xs font-extrabold uppercase tracking-[0.1em] text-[#A83825]">
+          Outlet Assignment
+        </h4>
+        <div className="mt-2 grid gap-3">
+          <label className="space-y-1">
+            <span className="text-xs font-bold">Primary Outlet *</span>
+            <Select
+              value={form.primaryOutletId}
+              onValueChange={v => setForm({ ...form, primaryOutletId: v })}
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue placeholder="Select outlet" />
+              </SelectTrigger>
+              <SelectContent>
+                {(outlets.data?.items ?? []).map((o: any) => (
+                  <SelectItem key={o.id} value={String(o.id)}>
+                    {o.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <div>
+            <span className="text-xs font-bold">
+              Additional Allowed Outlets
+            </span>
+            <div className="scrollbar-none mt-1 max-h-24 overflow-y-auto rounded-md border bg-white p-2">
+              {(outlets.data?.items ?? []).map((o: any) => (
+                <label key={o.id} className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={form.additionalOutlets.includes(o.id)}
+                    onChange={e =>
+                      setForm({
+                        ...form,
+                        additionalOutlets: e.target.checked
+                          ? [...form.additionalOutlets, o.id]
+                          : form.additionalOutlets.filter(id => id !== o.id),
+                      })
+                    }
+                  />
+                  {o.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </FormDialog>
   );
 }
 
@@ -2051,61 +2024,53 @@ function ShiftsView() {
           </ul>
         )}
       </div>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="bg-[#FCFAF6]">
-          <DialogHeader>
-            <DialogTitle>Create shift</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Name</span>
-              <Input
-                value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="Morning"
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">Start</span>
-              <Input
-                type="time"
-                value={form.startTime}
-                onChange={e => setForm({ ...form, startTime: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-bold">End</span>
-              <Input
-                type="time"
-                value={form.endTime}
-                onChange={e => setForm({ ...form, endTime: e.target.value })}
-                className="bg-white"
-              />
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!form.name.trim()) return toast.error("Name required");
-                createTemplate.mutate({
-                  name: form.name.trim(),
-                  startTime: form.startTime,
-                  endTime: form.endTime,
-                  outletId: form.outletId ? Number(form.outletId) : null,
-                });
-              }}
-              className="bg-[#211B18] text-white"
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="Create shift"
+        description="A named time window shifts can be scheduled against."
+        onSubmit={event => {
+          event.preventDefault();
+          if (!form.name.trim()) return toast.error("Name required");
+          createTemplate.mutate({
+            name: form.name.trim(),
+            startTime: form.startTime,
+            endTime: form.endTime,
+            outletId: form.outletId ? Number(form.outletId) : null,
+          });
+        }}
+        submitLabel="Create"
+        submitPending={createTemplate.isPending}
+        formClassName="grid gap-3"
+      >
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Name</span>
+          <Input
+            value={form.name}
+            onChange={e => setForm({ ...form, name: e.target.value })}
+            placeholder="Morning"
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">Start</span>
+          <Input
+            type="time"
+            value={form.startTime}
+            onChange={e => setForm({ ...form, startTime: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-bold">End</span>
+          <Input
+            type="time"
+            value={form.endTime}
+            onChange={e => setForm({ ...form, endTime: e.target.value })}
+            className="bg-white"
+          />
+        </label>
+      </FormDialog>
     </div>
   );
 }

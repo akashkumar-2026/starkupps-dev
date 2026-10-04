@@ -1,14 +1,6 @@
 import { trpc } from "@/api/trpc";
 import { FormField } from "@/components/shared/FormField";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -39,6 +31,7 @@ export function OrderIntakeDialog({
     type: "takeaway" as "dine_in" | "takeaway" | "delivery",
     customerName: "",
     phone: "",
+    address: "",
     itemName: "",
     quantity: "1",
     lineTotal: "",
@@ -69,6 +62,7 @@ export function OrderIntakeDialog({
         type: "takeaway",
         customerName: "",
         phone: "",
+        address: "",
         itemName: "",
         quantity: "1",
         lineTotal: "",
@@ -98,7 +92,8 @@ export function OrderIntakeDialog({
     quantity > 0 &&
     Number.isFinite(lineTotal) &&
     lineTotal > 0;
-  const submit = () => {
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (!valid) {
       toast.error(
         chosenOutletId === ""
@@ -111,9 +106,18 @@ export function OrderIntakeDialog({
       orderNumber,
       outletId: Number(chosenOutletId),
       type: form.type,
-      customer: form.phone.trim()
-        ? { name: form.customerName.trim() || null, phone: form.phone.trim() }
-        : null,
+      customer:
+        form.phone.trim() || form.customerName.trim() || form.address.trim()
+          ? {
+              name: form.customerName.trim() || null,
+              phone: form.phone.trim() || null,
+              // Delivery-only, so a counter ticket never carries a stale address.
+              address:
+                form.type === "delivery" && form.address.trim()
+                  ? form.address.trim()
+                  : null,
+            }
+          : null,
       notes: form.notes.trim() || null,
       items: [
         {
@@ -127,117 +131,132 @@ export function OrderIntakeDialog({
     });
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-[#D8CDC0] bg-[#FCFAF6]">
-        <DialogHeader>
-          <DialogTitle>Record an incoming ticket</DialogTitle>
-          <DialogDescription>This creates a persisted order.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Ticket number">
-            <Input
-              value={form.orderNumber}
-              onChange={e => setForm({ ...form, orderNumber: e.target.value })}
-              inputMode="numeric"
-              placeholder="e.g. 1042"
-            />
-          </FormField>
-          <FormField label="Outlet">
-            <Select
-              value={form.outletId}
-              onValueChange={outletId => setForm({ ...form, outletId })}
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Record an incoming ticket"
+      description="This creates a persisted order."
+      onSubmit={submit}
+      submitLabel={
+        create.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          "Create ticket"
+        )
+      }
+      submitPending={create.isPending}
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Ticket number">
+          <Input
+            value={form.orderNumber}
+            onChange={e => setForm({ ...form, orderNumber: e.target.value })}
+            inputMode="numeric"
+            placeholder="e.g. 1042"
+          />
+        </FormField>
+        <FormField label="Outlet">
+          <Select
+            value={form.outletId}
+            onValueChange={outletId => setForm({ ...form, outletId })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select outlet" />
+            </SelectTrigger>
+            <SelectContent>
+              {outlets.map(o => (
+                <SelectItem key={o.id} value={String(o.id)}>
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+        <FormField label="Order type">
+          <Select
+            value={form.type}
+            onValueChange={(type: "dine_in" | "takeaway" | "delivery") =>
+              setForm({ ...form, type })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="dine_in">Dine in</SelectItem>
+              <SelectItem value="takeaway">Takeaway</SelectItem>
+              <SelectItem value="delivery">Delivery</SelectItem>
+            </SelectContent>
+          </Select>
+        </FormField>
+        <FormField label="Guest name (optional)">
+          <Input
+            value={form.customerName}
+            onChange={e => setForm({ ...form, customerName: e.target.value })}
+            maxLength={160}
+          />
+        </FormField>
+        <FormField label="Guest phone (optional)">
+          <Input
+            value={form.phone}
+            onChange={e => setForm({ ...form, phone: e.target.value })}
+            inputMode="tel"
+            maxLength={32}
+          />
+        </FormField>
+        {/*
+          Delivery address, shown only for delivery tickets.
+          Without it a counter-recorded delivery had nowhere to record where it
+          was going, so the Admin ticket rendered "Not recorded" for the rider —
+          the same gap the website checkout had. The server rejects a delivery
+          ticket without one, so this field is the only way to complete it.
+        */}
+        {form.type === "delivery" ? (
+          <div className="sm:col-span-2">
+            <FormField
+              label="Delivery address"
+              hint="Required to dispatch this order"
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Select outlet" />
-              </SelectTrigger>
-              <SelectContent>
-                {outlets.map(o => (
-                  <SelectItem key={o.id} value={String(o.id)}>
-                    {o.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormField>
-          <FormField label="Order type">
-            <Select
-              value={form.type}
-              onValueChange={(type: "dine_in" | "takeaway" | "delivery") =>
-                setForm({ ...form, type })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="dine_in">Dine in</SelectItem>
-                <SelectItem value="takeaway">Takeaway</SelectItem>
-                <SelectItem value="delivery">Delivery</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormField>
-          <FormField label="Guest name (optional)">
-            <Input
-              value={form.customerName}
-              onChange={e => setForm({ ...form, customerName: e.target.value })}
-              maxLength={160}
-            />
-          </FormField>
-          <FormField label="Guest phone (optional)">
-            <Input
-              value={form.phone}
-              onChange={e => setForm({ ...form, phone: e.target.value })}
-              inputMode="tel"
-              maxLength={32}
-            />
-          </FormField>
-        </div>
-        <div className="rounded-xl border border-[#E4DCD1] bg-[#F8F4EE] p-4">
-          <p className="text-xs font-extrabold">Order line</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_96px_120px]">
-            <Input
-              value={form.itemName}
-              onChange={e => setForm({ ...form, itemName: e.target.value })}
-              placeholder="Item name"
-              maxLength={160}
-            />
-            <Input
-              value={form.quantity}
-              onChange={e => setForm({ ...form, quantity: e.target.value })}
-              inputMode="numeric"
-              placeholder="Qty"
-            />
-            <Input
-              value={form.lineTotal}
-              onChange={e => setForm({ ...form, lineTotal: e.target.value })}
-              inputMode="decimal"
-              placeholder="Total"
-            />
+              <Textarea
+                value={form.address}
+                onChange={e => setForm({ ...form, address: e.target.value })}
+                placeholder="House no., street, area, landmark"
+                rows={2}
+                maxLength={1000}
+              />
+            </FormField>
           </div>
-          <Textarea
-            value={form.notes}
-            onChange={e => setForm({ ...form, notes: e.target.value })}
-            placeholder="Order notes (optional)"
-            className="mt-3"
+        ) : null}
+      </div>
+      <div className="rounded-xl border border-[#E4DCD1] bg-[#F8F4EE] p-4">
+        <p className="text-xs font-extrabold">Order line</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_96px_120px]">
+          <Input
+            value={form.itemName}
+            onChange={e => setForm({ ...form, itemName: e.target.value })}
+            placeholder="Item name"
+            maxLength={160}
+          />
+          <Input
+            value={form.quantity}
+            onChange={e => setForm({ ...form, quantity: e.target.value })}
+            inputMode="numeric"
+            placeholder="Qty"
+          />
+          <Input
+            value={form.lineTotal}
+            onChange={e => setForm({ ...form, lineTotal: e.target.value })}
+            inputMode="decimal"
+            placeholder="Total"
           />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={create.isPending}
-            className="bg-[#211B18] text-white"
-          >
-            {create.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Create ticket"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <Textarea
+          value={form.notes}
+          onChange={e => setForm({ ...form, notes: e.target.value })}
+          placeholder="Order notes (optional)"
+          className="mt-3"
+        />
+      </div>
+    </FormDialog>
   );
 }
