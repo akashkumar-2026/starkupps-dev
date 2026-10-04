@@ -15,9 +15,9 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/utils/cn";
 import { useLocation } from "wouter";
-import { Bell, BellOff, Volume2, VolumeX } from "lucide-react";
+import { Bell, BellOff, BellRing, Volume2, VolumeX } from "lucide-react";
 
-import { describePending } from "./order-alert";
+import { describePending, isRinging, RING_WINDOW_MS } from "./order-alert";
 import { useOrderAlert } from "@/state/order-alert-provider";
 
 /**
@@ -32,6 +32,9 @@ export function OrderAlertIndicator() {
   const silent = state.pendingCount > 0 && tone === "silent-waiting";
   const waiting = state.pendingCount > 0;
   const muted = preference === "off";
+  // The pulse means "this is ringing right now". Held after the window closes it
+  // would imply noise the operator is not hearing, so it stops with the sound.
+  const ringing = !muted && isRinging(state, Date.now());
 
   return (
     <div className="flex items-center gap-1.5">
@@ -53,19 +56,25 @@ export function OrderAlertIndicator() {
           title={
             muted
               ? "Order sound is off — click to turn it on"
-              : "Order sound is on — click to mute"
+              : ringing
+                ? "Ringing for new orders — click to mute"
+                : waiting
+                  ? `${describePending(state.pendingCount)} — sound has stopped ringing`
+                  : "Order sound is on — click to mute"
           }
           className={cn(
             "grid size-8 place-items-center rounded-full border transition-colors",
-            waiting && !muted
+            ringing
               ? "border-[#E2533C] bg-[#FFF0EA] text-[#B83D29]"
               : "border-[#E4DCD1] bg-[#FCFAF6] text-[#8A7D70] hover:text-[#211B18]"
           )}
         >
           {muted ? (
             <BellOff className="h-3.5 w-3.5" />
-          ) : waiting ? (
+          ) : ringing ? (
             <Bell className="h-3.5 w-3.5 animate-[pulse_1.2s_ease-in-out_infinite]" />
+          ) : waiting ? (
+            <Bell className="h-3.5 w-3.5" />
           ) : (
             <Volume2 className="h-3.5 w-3.5" />
           )}
@@ -97,6 +106,10 @@ export function OrderAlertBanner() {
 
   const blocked = tone === "silent-waiting";
   const muted = tone === "muted-waiting";
+  // Whether the clip is running *right now*, as opposed to whether orders are
+  // waiting. After the window closes the banner must stop claiming to ring, or it
+  // contradicts the silence the operator is hearing.
+  const ringing = isRinging(state, Date.now());
   const first = newest[0];
 
   return (
@@ -117,8 +130,10 @@ export function OrderAlertBanner() {
           <VolumeX className="h-4 w-4 shrink-0" />
         ) : muted ? (
           <BellOff className="h-4 w-4 shrink-0" />
-        ) : (
+        ) : ringing ? (
           <Volume2 className="h-4 w-4 shrink-0" />
+        ) : (
+          <BellRing className="h-4 w-4 shrink-0" />
         )}
         <div className="min-w-0 text-xs">
           <p className="font-bold">
@@ -130,7 +145,9 @@ export function OrderAlertBanner() {
               ? "Your browser is blocking sound, so this alert is silent. Enable it to hear new orders."
               : muted
                 ? "Order sound is muted, so you will not hear this."
-                : `Ringing for ${scopeLabel}. Stop when every one is actioned.`}
+                : ringing
+                  ? `Ringing for ${scopeLabel} for ${RING_WINDOW_MS / 1000}s per new order.`
+                  : `New orders ring for ${RING_WINDOW_MS / 1000}s. These are still waiting.`}
           </p>
         </div>
       </div>
