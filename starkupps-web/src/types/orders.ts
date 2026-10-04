@@ -47,9 +47,23 @@ export type CreatedOrder = {
   status: string;
   subtotal: number;
   couponDiscount: number;
+  /** Sum of packing + delivery + tax. */
   charges: number;
+  /**
+   * The charge breakdown.
+   *
+   * The gateway has always returned these, but they were never declared here,
+   * so the storefront could only ever show a combined figure. Declaring them is
+   * what lets the confirmation screen account for the total instead of asking
+   * the customer to trust it.
+   */
+  packing: number;
+  delivery: number;
+  tax: number;
   total: number;
   outletId: number;
+  type: ApiOrderType;
+  createdAt: string | null;
   /** `true` when an idempotency key replayed an existing order. */
   already?: boolean;
 };
