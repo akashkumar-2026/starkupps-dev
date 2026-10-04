@@ -1,4 +1,4 @@
-import { inr } from "@/utils/format";
+import { dateText, dateTimeText, inr } from "@/utils/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -267,7 +267,7 @@ function Customer360({ id, onBack }: { id: number; onBack: () => void }) {
             </h2>
             <p className="text-xs text-[#776A5E]">
               {customer.phone} · {customer.email ?? "No email"} · Joined{" "}
-              {new Date(customer.createdAt).toLocaleDateString()}
+              {dateText(customer.createdAt)}
             </p>
           </div>
           <Badge className="bg-[#E5F2E9] text-[#2F6947] border-[#BDE0C8]">
@@ -376,8 +376,7 @@ function Customer360({ id, onBack }: { id: number; onBack: () => void }) {
                       #{o.orderNumber} · {o.status}
                     </p>
                     <p className="text-xs text-[#87796C]">
-                      {o.outletName ?? "Direct"} ·{" "}
-                      {new Date(o.createdAt).toLocaleString()}
+                      {o.outletName ?? "Direct"} · {dateTimeText(o.createdAt)}
                     </p>
                   </div>
                   <span className="text-xs font-bold">
@@ -425,7 +424,7 @@ function Customer360({ id, onBack }: { id: number; onBack: () => void }) {
                   <p className="text-xs font-bold">⭐ {f.rating}</p>
                   <p className="text-xs text-[#6F6257]">{f.comment}</p>
                   <p className="text-[11px] text-[#87796C]">
-                    {new Date(f.createdAt).toLocaleString()}
+                    {dateTimeText(f.createdAt)}
                   </p>
                 </div>
               ))
