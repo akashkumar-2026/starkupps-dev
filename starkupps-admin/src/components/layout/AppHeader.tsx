@@ -33,6 +33,7 @@ import { Link, useLocation } from "wouter";
 import { useOutlet } from "@/state/outlet-provider";
 import { RealtimeIndicator } from "@/components/layout/RealtimeIndicator";
 import { OrderAlertIndicator } from "@/features/orders/OrderAlertBanner";
+import { dateTimeText } from "@/utils/format";
 
 type AppHeaderProps = {
   currentView: View;
@@ -305,7 +306,7 @@ function NotificationSheet({
             <p className="mt-1 text-xs text-muted-foreground">{n.message}</p>
             <div className="mt-2 flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground">
-                {new Date(n.createdAt).toLocaleString()}
+                {dateTimeText(n.createdAt)}
               </span>
               {!n.readAt && (
                 <Button
