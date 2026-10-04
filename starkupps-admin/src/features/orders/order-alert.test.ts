@@ -7,29 +7,40 @@ import {
   isAutoplayRejection,
   needsAttention,
   readPreference,
+  isRinging,
   ringReducer,
+  RING_WINDOW_MS,
   shouldRing,
   type RingState,
 } from "./order-alert";
 
-/** A loaded, unblocked audio element with `count` orders waiting. */
+/** A fixed instant, so window arithmetic in tests is not clock-dependent. */
+const T0 = 1_700_000_000_000;
+
+/**
+ * A loaded, unblocked audio element with `count` orders waiting.
+ *
+ * `ringUntil` defaults to an open window at `T0`, because these tests are about
+ * *who gets to ring*; the window's own lifetime is covered separately below.
+ */
 const ready = (count: number, patch: Partial<RingState> = {}): RingState => ({
   ...initialRingState("on"),
   playable: true,
   pendingCount: count,
+  ringUntil: count > 0 ? T0 + RING_WINDOW_MS : null,
   ...patch,
 });
 
 describe("shouldRing", () => {
   it("rings while at least one untouched order exists", () => {
-    expect(shouldRing(ready(1))).toBe(true);
-    expect(shouldRing(ready(7))).toBe(true);
+    expect(shouldRing(ready(1), T0)).toBe(true);
+    expect(shouldRing(ready(7), T0)).toBe(true);
   });
 
   it("stops the moment nothing is waiting", () => {
     // The whole stop condition. An order that has been advanced or cancelled
     // leaves `new`, so the count reaches zero and the sound stops.
-    expect(shouldRing(ready(0))).toBe(false);
+    expect(shouldRing(ready(0), T0)).toBe(false);
   });
 
   it("never rings when the operator muted it", () => {
@@ -52,7 +63,7 @@ describe("shouldRing", () => {
 
 describe("ringReducer — pending count", () => {
   it("clears the count when nothing is waiting", () => {
-    const state = ringReducer(ready(4), { type: "pending", count: 0 });
+    const state = ringReducer(ready(4), { type: "pending", count: 0, now: T0 });
     expect(state.pendingCount).toBe(0);
     expect(shouldRing(state)).toBe(false);
   });
@@ -60,7 +71,7 @@ describe("ringReducer — pending count", () => {
   it("treats a nonsense count as nothing waiting rather than trusting it", () => {
     for (const count of [-1, 1.5, Number.NaN]) {
       expect(
-        ringReducer(ready(4), { type: "pending", count }).pendingCount
+        ringReducer(ready(4), { type: "pending", count, now: T0 }).pendingCount
       ).toBe(0);
     }
   });
@@ -71,7 +82,7 @@ describe("ringReducer — pending count", () => {
     // direction that fails safely.
     const state = ready(4);
     expect(
-      ringReducer(state, { type: "pending", count: -1 }).pendingCount
+      ringReducer(state, { type: "pending", count: -1, now: T0 }).pendingCount
     ).toBe(0);
   });
 });
@@ -116,7 +127,7 @@ describe("ringReducer — the sticky unlock", () => {
       }
     );
     expect(state.blocked).toBe(false);
-    expect(shouldRing(state)).toBe(true);
+    expect(shouldRing(state, T0)).toBe(true);
   });
 
   it("ignores gestures when nothing is blocked", () => {
@@ -199,5 +210,155 @@ describe("describePending", () => {
     expect(describePending(0)).toBe("No new orders");
     expect(describePending(1)).toBe("1 new order waiting");
     expect(describePending(4)).toBe("4 new orders waiting");
+  });
+});
+
+describe("the 15-second ring window", () => {
+  /** A state that has just seen `count` orders arrive at `T0`. */
+  const arrived = (count: number) =>
+    ringReducer(initialRingState("on"), { type: "pending", count, now: T0 });
+
+  it("rings when an order arrives, and stops 15s later", () => {
+    const state = arrived(1);
+    expect(shouldRing({ ...state, playable: true }, T0)).toBe(true);
+    // One tick before the deadline, still ringing.
+    expect(
+      shouldRing({ ...state, playable: true }, T0 + RING_WINDOW_MS - 1)
+    ).toBe(true);
+    // At the deadline, silent. This is the bug being fixed.
+    expect(shouldRing({ ...state, playable: true }, T0 + RING_WINDOW_MS)).toBe(
+      false
+    );
+    expect(shouldRing({ ...state, playable: true }, T0 + 60_000)).toBe(false);
+  });
+
+  it("stays silent once the window closes even though an order is still waiting", () => {
+    // The exact reported symptom: the order is untouched, so the count stays > 0
+    // forever, and before this fix the clip looped indefinitely.
+    const state = { ...arrived(1), playable: true };
+    expect(state.pendingCount).toBe(1);
+    expect(shouldRing(state, T0 + 5 * 60_000)).toBe(false);
+  });
+
+  it("closes the window when the expiry arrives", () => {
+    const closed = ringReducer(arrived(1), {
+      type: "expired",
+      now: T0 + RING_WINDOW_MS,
+    });
+    expect(closed.ringUntil).toBeNull();
+    expect(isRinging(closed, T0 + RING_WINDOW_MS)).toBe(false);
+  });
+
+  it("ignores an expiry that fires before the deadline", () => {
+    // A timer scheduled for the old window, firing late into a newer one.
+    const state = arrived(1);
+    const stale = ringReducer(state, { type: "expired", now: T0 + 5_000 });
+    expect(stale).toBe(state);
+    expect(isRinging(stale, T0 + 5_000)).toBe(true);
+  });
+
+  it("is not extended by a refetch of an unchanged count", () => {
+    // Load-bearing. The count is polled every couple of minutes as a safety net;
+    // if an unchanged read reset the window it would never close, which is the
+    // unbounded ringing all over again.
+    const state = arrived(3);
+    const afterRefetch = ringReducer(state, {
+      type: "pending",
+      count: 3,
+      now: T0 + 5_000,
+    });
+    expect(afterRefetch.ringUntil).toBe(state.ringUntil);
+    expect(
+      shouldRing({ ...afterRefetch, playable: true }, T0 + RING_WINDOW_MS)
+    ).toBe(false);
+  });
+
+  it("is not extended or restarted by an order being actioned mid-window", () => {
+    const state = arrived(3);
+    const afterOneHandled = ringReducer(state, {
+      type: "pending",
+      count: 2,
+      now: T0 + 4_000,
+    });
+    expect(afterOneHandled.ringUntil).toBe(state.ringUntil);
+  });
+
+  it("opens a fresh window for each new arrival", () => {
+    // Proportional to what happened: a burst of orders rings for a burst of
+    // windows, not one.
+    const first = arrived(1);
+    const second = ringReducer(first, {
+      type: "pending",
+      count: 2,
+      now: T0 + 20_000,
+    });
+    expect(second.ringUntil).toBe(T0 + 20_000 + RING_WINDOW_MS);
+    // The previous window had already closed; this one is open.
+    expect(isRinging(first, T0 + 20_000)).toBe(false);
+    expect(isRinging(second, T0 + 20_000)).toBe(true);
+  });
+
+  it("closes immediately when the last order is handled", () => {
+    const state = ringReducer(arrived(2), {
+      type: "pending",
+      count: 0,
+      now: T0 + 2_000,
+    });
+    expect(state.ringUntil).toBeNull();
+    expect(shouldRing({ ...state, playable: true }, T0 + 2_000)).toBe(false);
+  });
+
+  it("does not resume a ring for a tab that slept through the window", () => {
+    const state = { ...arrived(1), playable: true };
+    // Woke up ten minutes later. The deadline has long passed.
+    expect(shouldRing(state, T0 + 600_000)).toBe(false);
+  });
+
+  it("does not resurrect a window that already closed, on a later refetch", () => {
+    let state = arrived(1);
+    state = ringReducer(state, { type: "expired", now: T0 + RING_WINDOW_MS });
+    const refetch = ringReducer(state, {
+      type: "pending",
+      count: 1,
+      now: T0 + 90_000,
+    });
+    expect(refetch.ringUntil).toBeNull();
+    expect(shouldRing({ ...refetch, playable: true }, T0 + 90_000)).toBe(false);
+  });
+
+  it("rings for a burst arriving at once, not once per order", () => {
+    // The stream delivers inserts one at a time but a reconnect can reveal a
+    // backlog in a single count jump.
+    const state = arrived(5);
+    expect(shouldRing({ ...state, playable: true }, T0)).toBe(true);
+    expect(shouldRing({ ...state, playable: true }, T0 + RING_WINDOW_MS)).toBe(
+      false
+    );
+  });
+
+  it("still needs sound on and the file loaded", () => {
+    const state = arrived(1);
+    expect(
+      shouldRing({ ...state, playable: true, preference: "off" }, T0)
+    ).toBe(false);
+    expect(shouldRing({ ...state, playable: false }, T0)).toBe(false);
+  });
+
+  it("rings for the window after an operator unmutes mid-window", () => {
+    const muted = ringReducer(arrived(1), {
+      type: "preference",
+      preference: "off",
+    });
+    const unmuted = ringReducer(muted, {
+      type: "preference",
+      preference: "on",
+    });
+    expect(shouldRing({ ...unmuted, playable: true }, T0 + 3_000)).toBe(true);
+  });
+
+  it("is bounded by roughly fifteen seconds, not minutes", () => {
+    // Guards the constant itself against being edited into something unusable.
+    expect(RING_WINDOW_MS).toBe(15_000);
+    expect(RING_WINDOW_MS).toBeLessThanOrEqual(30_000);
   });
 });
