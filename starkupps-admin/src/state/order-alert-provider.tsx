@@ -64,6 +64,7 @@ import {
 import {
   alertTone,
   initialRingState,
+  isRinging,
   isAutoplayRejection,
   readPreference,
   ringReducer,
@@ -142,7 +143,13 @@ export function OrderAlertProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Guarded on a defined count so a failed read leaves the last known state
     // alone instead of clearing the alert for a waiting order.
-    if (typeof count === "number") dispatch({ type: "pending", count });
+    //
+    // `now` rides along because a rising count is what opens the ring window, and
+    // the window is stored as an absolute deadline. Reading the clock here rather
+    // than inside the reducer keeps the reducer pure and testable.
+    if (typeof count === "number") {
+      dispatch({ type: "pending", count, now: Date.now() });
+    }
   }, [count]);
 
   /**
@@ -157,7 +164,7 @@ export function OrderAlertProvider({ children }: { children: ReactNode }) {
    * is not yet counted, rather than a permanent ring for someone else's.
    */
   useEffect(() => {
-    dispatch({ type: "pending", count: 0 });
+    dispatch({ type: "pending", count: 0, now: Date.now() });
   }, [selectedId]);
 
   // ── The audio element ────────────────────────────────────────────────────
@@ -165,9 +172,18 @@ export function OrderAlertProvider({ children }: { children: ReactNode }) {
   // alert would restart the clip mid-loop and re-trigger the autoplay decision.
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // The two gesture paths below call `attemptPlay` directly rather than going
+  // through the playback effect, so the window has to be enforced here too —
+  // otherwise unlocking the sound after the window had closed would start a ring
+  // that is no longer due. A ref keeps this readable without making the callback
+  // depend on every state change.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const attemptPlay = useCallback(async () => {
     const el = audioRef.current;
     if (!el) return;
+    if (!isRinging(stateRef.current, Date.now())) return;
     try {
       await el.play();
       dispatch({ type: "blocked", blocked: false });
@@ -194,12 +210,44 @@ export function OrderAlertProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /**
+   * Close the ring window when it elapses.
+   *
+   * Nothing polls the clock on its own, so without this the deadline would be
+   * recorded and never acted on — the audio would keep looping because the
+   * effect below only re-runs when `state` changes. This is the thing that makes
+   * the ring stop.
+   *
+   * The timer is keyed on the deadline, so a new arrival (which replaces it)
+   * reschedules, and clearing on cleanup stops a stale expiry from firing into a
+   * window that opened in the meantime. The reducer re-checks the stored deadline
+   * as well, so even a timer that fires late cannot silence a newer window.
+   */
+  useEffect(() => {
+    if (state.ringUntil === null) return;
+    const remaining = state.ringUntil - Date.now();
+    // Already elapsed — for instance a tab that was throttled or slept through
+    // the window. Close it now rather than waiting out a negative delay.
+    if (remaining <= 0) {
+      dispatch({ type: "expired", now: Date.now() });
+      return;
+    }
+    const id = window.setTimeout(
+      () => dispatch({ type: "expired", now: Date.now() }),
+      remaining
+    );
+    return () => window.clearTimeout(id);
+  }, [state.ringUntil]);
+
   // Drive playback from state. `el.paused` guards against restarting the clip on
   // every render, which would make it sound like a stutter rather than a loop.
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
-    if (shouldRing(state)) {
+    // One clock read per pass, so the window check and the decision cannot
+    // disagree because a few ms elapsed between them.
+    const now = Date.now();
+    if (shouldRing(state, now)) {
       if (el.paused) {
         el.currentTime = 0;
         void attemptPlay();
