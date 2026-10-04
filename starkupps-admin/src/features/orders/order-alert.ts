@@ -17,15 +17,33 @@
  *
  * ## The stop condition
  *
- * Ringing is a *function of state*, not of events: it plays while
- * `status = 'new'` orders exist and stops when none remain. A new order is, by
- * definition, one nobody has acted on, so "no new orders left" and "the admin
- * has acted on every new order" are the same statement.
+ * Ringing is a *function of state*, not of events: it plays for a bounded window
+ * opened by a rising pending count, and stops when that window closes or when no
+ * `status = 'new'` orders remain.
  *
- * Deriving it from state rather than from the arrival event also means the alert
- * self-heals. A dropped SSE frame, a laptop that slept, or a gateway restart
- * cannot leave the panel ringing about an order that was handled ten minutes ago
- * — the next count simply reads zero and the sound stops.
+ * Deriving it from state rather than from the arrival event is deliberate, and it
+ * is what lets the alert self-heal. A dropped SSE frame, a laptop that slept, or a
+ * gateway restart cannot leave the panel ringing about an order handled ten
+ * minutes ago — the next count simply reads zero and the sound stops. A purely
+ * event-driven version would have the opposite failure: the arrival that nobody
+ * witnessed would never alert at all.
+ *
+ * ## Why the window is bounded
+ *
+ * An unbounded loop is a liability, not a safety net. One forgotten ticket on a
+ * busy Saturday meant the panel looped the clip for hours, and an alert that cries
+ * wolf gets muted — which then also silences the orders that genuinely need
+ * attention. The alert's job is to say "something arrived", not to nag until
+ * somebody acts.
+ *
+ * The deadline is stored as an absolute timestamp rather than counted down by a
+ * timer, which keeps two properties that matter:
+ *
+ * * **An unchanged count never refreshes it.** The count is refetched every couple
+ *   of minutes as a safety net, so a countdown that reset on each read would
+ *   never expire.
+ * * **A laptop that sleeps through the window comes back silent.** The deadline
+ *   has already passed on resume, so it cannot resume a ring nobody heard.
  */
 
 export type SoundPreference = "on" | "off";
@@ -34,6 +52,16 @@ export const SOUND_STORAGE_KEY = "starkupps_order_sound";
 
 /** Where the clip is served from. Vite copies `public/` to the build root. */
 export const RINGTONE_SRC = "/order-ringtone.mp3";
+
+/**
+ * How long a newly arrived order rings before going quiet.
+ *
+ * Long enough to be heard over a kitchen extractor, short enough that a queue
+ * of unattended orders does not turn into hours of noise. Each *new* arrival
+ * opens its own window, so a burst of five orders rings for five windows rather
+ * than one — the alert has to stay proportional to what just happened.
+ */
+export const RING_WINDOW_MS = 15_000;
 
 /**
  * Reads the stored preference.
@@ -82,6 +110,14 @@ export function isAutoplayRejection(error: unknown): boolean {
 export type RingState = {
   /** Orders still waiting for a human, as last observed. */
   pendingCount: number;
+  /**
+   * Epoch ms at which the current ring window closes, or `null` when nothing is
+   * ringing.
+   *
+   * Absolute rather than a countdown so a throttled or slept tab cannot stretch
+   * the window, and so a refetch of an unchanged count cannot extend it.
+   */
+  ringUntil: number | null;
   preference: SoundPreference;
   /** The audio element can start playing. */
   playable: boolean;
@@ -98,15 +134,17 @@ export type RingState = {
 };
 
 export type RingAction =
-  | { type: "pending"; count: number }
+  | { type: "pending"; count: number; now: number }
   | { type: "preference"; preference: SoundPreference }
   | { type: "playable"; playable: boolean }
   | { type: "blocked"; blocked: boolean }
+  | { type: "expired"; now: number }
   | { type: "gesture" };
 
 export function initialRingState(preference: SoundPreference): RingState {
   return {
     pendingCount: 0,
+    ringUntil: null,
     preference,
     playable: false,
     blocked: false,
@@ -116,12 +154,44 @@ export function initialRingState(preference: SoundPreference): RingState {
 
 export function ringReducer(state: RingState, action: RingAction): RingState {
   switch (action.type) {
-    case "pending":
+    case "pending": {
       // A negative or non-integer count can only come from a bad response;
       // treating it as "nothing waiting" would silence a real order.
-      return Number.isInteger(action.count) && action.count > 0
-        ? { ...state, pendingCount: action.count }
-        : { ...state, pendingCount: 0 };
+      const count =
+        Number.isInteger(action.count) && action.count > 0 ? action.count : 0;
+
+      // Nothing waiting, so nothing to ring about — and the window closes even
+      // if it was still counting down.
+      if (count === 0) {
+        return { ...state, pendingCount: 0, ringUntil: null };
+      }
+
+      // The window opens *only* when the count rises. This is the load-bearing
+      // distinction: the count is refetched on a timer as a safety net, so a
+      // window that reset on every read of an unchanged count would never close
+      // — which is precisely the unbounded ringing being fixed here.
+      const arrived = count > state.pendingCount;
+      return {
+        ...state,
+        pendingCount: count,
+        ringUntil: arrived
+          ? action.now + RING_WINDOW_MS
+          : // A count that held steady or fell keeps the existing window, so an
+            // order actioned mid-window does not restart the clip, and a partial
+            // queue (3 → 2) does not either.
+            state.ringUntil,
+      };
+    }
+
+    case "expired": {
+      // Guarded on "has the stored deadline passed" rather than "was this the
+      // timer that fired", so a stale expiry cannot silence a *newer* window that
+      // opened in the meantime.
+      if (state.ringUntil === null || action.now < state.ringUntil) {
+        return state;
+      }
+      return { ...state, ringUntil: null };
+    }
 
     case "preference":
       return {
@@ -155,19 +225,38 @@ export function ringReducer(state: RingState, action: RingAction): RingState {
 }
 
 /**
+ * Whether the ring window is currently open, ignoring sound settings.
+ *
+ * Split from {@link shouldRing} because the two answer different questions: "is
+ * audio running" versus "is there an arrival still being announced". The banner
+ * needs the second one to keep reminding after the window closes — the order is
+ * still unattended, it just is not being announced any more.
+ */
+export function isRinging(state: RingState, now: number): boolean {
+  return state.ringUntil !== null && now < state.ringUntil;
+}
+
+/**
  * Whether the audio element should currently be running.
  *
- * Requires all four of: sound switched on, something waiting, the file loaded,
- * and not known-blocked. `blocked` is checked because retrying a play the
- * browser has already refused just produces another rejected promise on every
- * render.
+ * Requires all five of: sound switched on, something waiting, the file loaded,
+ * not known-blocked, and an open ring window. `blocked` is checked because
+ * retrying a play the browser has already refused just produces another rejected
+ * promise on every render.
+ *
+ * `now` is a parameter rather than a clock read so the decision is testable and
+ * so a caller can evaluate one consistent instant.
  */
-export function shouldRing(state: RingState): boolean {
+export function shouldRing(
+  state: RingState,
+  now: number = Date.now()
+): boolean {
   return (
     state.preference === "on" &&
     state.pendingCount > 0 &&
     state.playable &&
-    !state.blocked
+    !state.blocked &&
+    isRinging(state, now)
   );
 }
 
