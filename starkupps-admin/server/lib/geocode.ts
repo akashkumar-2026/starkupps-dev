@@ -1,37 +1,58 @@
 /**
- * Reverse geocoding for the storefront's "use my location" button.
+ * Reverse geocoding for the storefront's "use my current location" button.
  *
- * ## Why this lives on the server
+ * ## What this does
  *
  * `navigator.geolocation` yields coordinates and nothing else, so turning "where
- * am I" into a deliverable street address needs a geocoding dataset. Three
- * reasons that call goes through the gateway rather than the browser:
+ * am I" into a deliverable street address needs a geocoding dataset. This module
+ * calls **Google's Geocoding API** and falls back to OpenStreetMap's Nominatim
+ * when no Google key is configured or Google is unreachable.
  *
- * 1. **No key in the customer bundle.** A browser-restricted key would ship to
- *    every visitor and be scrapeable from the page. Here the provider is an
- *    implementation detail.
- * 2. **Cache and rate-limit control.** Nominatim's usage policy caps it at one
- *    request per second and requires callers to identify themselves. A shared
- *    cache keyed on *rounded* coordinates means a hundred customers in the same
- *    locality cost one upstream call, and the cache never holds anyone's exact
- *    home address — only the street-level area they are in.
- * 3. **One place to swap providers.** Nothing in the storefront names Nominatim.
+ * ## Why this stays on the server
  *
- * ## Why the cache key is rounded
+ * Google bills per request and its keys are easy to abuse, so the call must not
+ * originate from the customer. Keeping it in the gateway means the
+ * `GOOGLE_MAPS_API_KEY` never enters a browser bundle. The storefront only ever
+ * sees the composed address string.
  *
- * Storing exact coordinates for a delivery address is more personal data than the
- * order itself needs, and re-geocoding two houses on the same street to the metre
- * is wasted work. Four decimal places is roughly 11 m — precise enough that the
- * filled-in text is right, coarse enough that neighbours share a cache entry.
+ * The storefront *does* load the Maps JavaScript API to draw the map, and that
+ * key is unavoidably visible to the customer — which is precisely why it is a
+ * different key, restricted to the Maps JavaScript API, while this one is
+ * restricted to the Geocoding API and to the gateway's IPs.
+ *
+ * ## Why there is a fallback
+ *
+ * A misconfigured key is the single most likely way for this feature to break in
+ * production, and the failure mode it produces — a "use my location" button that
+ * silently does nothing — is one that loses orders. Falling back to Nominatim
+ * costs one upstream request and keeps the flow alive at slightly lower address
+ * quality. Google failures are logged loudly rather than swallowed, because a
+ * persistent fallback usually means a billing or restriction problem to fix.
+ *
+ * ## Caching
+ *
+ * Two things make the cache worth having:
+ *
+ * 1. **Cost and rate limits.** A hundred customers in the same locality cost one
+ *    upstream call.
+ * 2. **Privacy.** Exact coordinates are more personal data than the order itself
+ *    needs. The key is *rounded* before hashing, so the cache holds a
+ *    street-level area rather than anyone's precise home position. Four decimal
+ *    places is roughly 11 m — precise enough that the suggested text is right,
+ *    coarse enough that neighbours share an entry.
  *
  * ## Attribution
  *
  * Nominatim's data is © OpenStreetMap contributors and ODbL-licensed, which
- * requires attribution. `attribution` is returned with every result so the caller
- * can render it.
+ * requires attribution, so it is returned with every Nominatim result. Google's
+ * terms require attribution for the *map*, which the storefront's map component
+ * renders itself.
  */
 import { createHash } from "node:crypto";
 
+import { ENV } from "../config/env";
+
+const GOOGLE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse";
 
 /** Identifies this deployment to Nominatim, as their usage policy requires. */
@@ -60,13 +81,32 @@ export type ReverseGeocodeResult = {
 };
 
 /**
+ * A provider-neutral address, so one composer serves both upstreams.
+ *
+ * Normalising at the edge keeps `composeAddress` — where the rules that matter
+ * live (never invent a value, de-duplicate, respect the schema's length limit) —
+ * written once instead of once per provider.
+ */
+export type AddressParts = {
+  houseNumber?: string | null;
+  road?: string | null;
+  area?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+};
+
+/**
  * Coarse cache key.
  *
- * Rounded to 4 dp (~11 m) so nearby customers share an entry. Hashed as well so
- * the key is a fixed width and carries no readable coordinate.
+ * Rounded to 4 dp (~11 m) so nearby customers share an entry, then hashed so the
+ * key is a fixed width and carries no readable coordinate. The provider is part
+ * of the key so a Nominatim result is never served to a customer who is
+ * entitled to the better Google one.
  */
-function cacheKey(lat: number, lon: number): string {
-  const rounded = `${lat.toFixed(4)}:${lon.toFixed(4)}`;
+function cacheKey(provider: string, lat: number, lon: number): string {
+  const rounded = `${provider}:${lat.toFixed(4)}:${lon.toFixed(4)}`;
   return createHash("sha256").update(rounded).digest("hex").slice(0, 32);
 }
 
@@ -85,7 +125,7 @@ function remember(key: string, value: ReverseGeocodeResult) {
   cache.set(key, { at: Date.now(), value });
 }
 
-/** Serialises upstream calls so we never exceed the provider's 1 req/s budget. */
+/** Serialises Nominatim calls so we never exceed its 1 req/s budget. */
 let lastUpstreamAt = 0;
 let upstreamChain: Promise<unknown> = Promise.resolve();
 
@@ -108,43 +148,222 @@ function withUpstreamSlot<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+function clean(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 /**
- * Turns a Nominatim address object into one readable line.
+ * Turns a provider-neutral address into one readable line.
  *
- * `display_name` alone is unusable in a form field — it repeats the city and
- * country and can run past 300 characters, which the address schema rejects.
- * The components are preferred, then common-and-useful optional parts
- * (house_number, road, suburb, neighbourhood) are appended.
+ * A single `formatted_address` alone is unusable in a form field — it repeats the
+ * city and country and can run past 300 characters, which the address schema
+ * rejects. Components are preferred instead, joined in the order an Indian
+ * address is read: house, road, area, city, state, PIN. PIN last because it reads
+ * as a postcode, not as a place.
  *
  * Returns `""` when nothing usable came back, so the caller can treat it as a
  * miss rather than filling the field with "Unknown".
  */
-export function composeAddress(
-  address: Record<string, unknown> | null | undefined
-): string {
-  if (!address || typeof address !== "object") return "";
-  const pick = (...keys: string[]): string | null => {
-    for (const key of keys) {
-      const value = address[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
+export function composeAddress(parts: AddressParts | null | undefined): string {
+  if (!parts || typeof parts !== "object") return "";
+  const order: Array<keyof AddressParts> = [
+    "houseNumber",
+    "road",
+    "area",
+    "city",
+    "state",
+    "postcode",
+  ];
+  const values = order.map(key => clean(parts[key]));
+  const unique = values.filter(
+    (value, i): value is string => Boolean(value) && values.indexOf(value) === i
+  );
+  const line = unique.join(", ");
+  return line.length > 300 ? line.slice(0, 300) : line;
+}
+
+/** One entry from Google's `address_components` array. */
+type GoogleComponent = {
+  long_name?: unknown;
+  short_name?: unknown;
+  types?: unknown;
+};
+
+/**
+ * Flattens Google's `address_components` into {@link AddressParts}.
+ *
+ * Google returns a flat array where each entry lists every type that applies to
+ * it, so a single entry can be both `locality` and `political`. Types are probed
+ * longest-preference-first to match how an address is read.
+ *
+ * `short_name` is preferred over `long_name` for the state, because Google's
+ * long form for Indian states is the same word as the city in some cases
+ * ("Munger, Munger"); `short_name` gives the standard abbreviation.
+ */
+export function googleAddressParts(components: unknown): AddressParts | null {
+  if (!Array.isArray(components)) return null;
+
+  const byType = (...types: string[]): string | null => {
+    for (const entry of components as GoogleComponent[]) {
+      if (!entry || !Array.isArray(entry.types)) continue;
+      if (entry.types.some(t => types.includes(t as string))) {
+        return clean(entry.long_name) ?? clean(entry.short_name);
+      }
     }
     return null;
   };
 
-  // Order mirrors how an Indian address is read: house, road, area, city, state,
-  // PIN. PIN last because it reads as a postcode, not as a place.
-  const parts = [
-    pick("house_number"),
-    pick("road", "pedestrian", "footway", "path"),
-    pick("neighbourhood", "suburb", "city_district", "quarter"),
-    pick("village", "town", "city", "municipality"),
-    pick("state"),
-    pick("postcode"),
-  ].filter((part): part is string => Boolean(part));
+  const parts: AddressParts = {
+    houseNumber: byType("street_number"),
+    road: byType("route"),
+    // A neighbourhood/sublocality is the useful "area"; level 2 is the more
+    // specific of the two.
+    area: byType("sublocality_level_2", "sublocality_level_1", "sublocality"),
+    // Google may label a town as `locality`, `postal_town` or
+    // `administrative_area_level_3` depending on the region.
+    city: byType("locality", "postal_town", "administrative_area_level_3"),
+    state: byType("administrative_area_level_1"),
+    postcode: byType("postal_code"),
+    country: byType("country"),
+  };
 
-  const unique = parts.filter((part, i) => parts.indexOf(part) === i);
-  const line = unique.join(", ");
-  return line.length > 300 ? line.slice(0, 300) : line;
+  // Every field null means Google had nothing usable, which is a miss rather
+  // than an address of "Unknown".
+  const hasAny = Object.values(parts).some(value => clean(value) !== null);
+  return hasAny ? parts : null;
+}
+
+/** Flattens a Nominatim `address` object into {@link AddressParts}. */
+export function nominatimAddressParts(
+  address: Record<string, unknown> | null | undefined
+): AddressParts | null {
+  if (!address || typeof address !== "object") return null;
+  const pick = (...keys: string[]): string | null => {
+    for (const key of keys) {
+      const value = clean(address[key]);
+      if (value) return value;
+    }
+    return null;
+  };
+  const parts: AddressParts = {
+    houseNumber: pick("house_number"),
+    road: pick("road", "pedestrian", "footway", "path"),
+    area: pick("neighbourhood", "suburb", "city_district", "quarter"),
+    city: pick("city", "town", "village", "municipality"),
+    state: pick("state"),
+    postcode: pick("postcode"),
+    country: pick("country"),
+  };
+  const hasAny = Object.values(parts).some(value => clean(value) !== null);
+  return hasAny ? parts : null;
+}
+
+/**
+ * Google's status codes, mapped to whether retrying could ever help.
+ *
+ * Exported for tests: the distinction that matters is `ZERO_RESULTS` (a real
+ * answer — nobody is at those coordinates) versus the rest (an infrastructure
+ * problem worth logging loudly).
+ */
+export function isRetryableGoogleStatus(status: unknown): boolean {
+  return status !== "OK" && status !== "ZERO_RESULTS";
+}
+
+async function fetchJson(
+  url: URL,
+  headers: Record<string, string>
+): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`upstream responded ${response.status}`);
+    }
+    return (await response.json()) as Record<string, unknown>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function reverseGeocodeGoogle(
+  lat: number,
+  lon: number,
+  key: string
+): Promise<ReverseGeocodeResult> {
+  const url = new URL(GOOGLE_URL);
+  url.searchParams.set("latlng", `${lat.toFixed(6)},${lon.toFixed(6)}`);
+  url.searchParams.set("key", key);
+  url.searchParams.set("language", "en");
+  // Bias towards India without hard-restricting: a coordinate outside India
+  // still resolves rather than returning nothing.
+  url.searchParams.set("region", "in");
+
+  const payload = await fetchJson(url, { Accept: "application/json" });
+  const status = payload?.status;
+
+  if (status !== "OK") {
+    // Deliberately includes the status but never the URL, so the key cannot leak
+    // into a log line via the query string.
+    throw new Error(`google geocoding status ${String(status)}`);
+  }
+
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  const first = results[0] as { address_components?: unknown } | undefined;
+  const parts = googleAddressParts(first?.address_components);
+  const address = composeAddress(parts);
+  if (!address) {
+    // A coordinate in the middle of nowhere, or a sea. Not worth retrying — the
+    // customer can still type their address.
+    throw new Error("no address at those coordinates");
+  }
+
+  return {
+    address,
+    locality: clean(parts?.area),
+    city: clean(parts?.city),
+    state: clean(parts?.state),
+    postcode: clean(parts?.postcode),
+    country: clean(parts?.country),
+    attribution: "Google",
+    cached: false,
+  };
+}
+
+async function reverseGeocodeNominatim(
+  lat: number,
+  lon: number
+): Promise<ReverseGeocodeResult> {
+  const url = new URL(NOMINATIM_URL);
+  url.searchParams.set("lat", lat.toFixed(6));
+  url.searchParams.set("lon", lon.toFixed(6));
+  url.searchParams.set("format", "jsonv2");
+  // `addressdetails=1` is what fills the `address` object the parser reads.
+  url.searchParams.set("addressdetails", "1");
+  url.searchParams.set("zoom", "18");
+  url.searchParams.set("accept-language", "en");
+
+  const payload = await withUpstreamSlot(() =>
+    fetchJson(url, { "User-Agent": USER_AGENT, Accept: "application/json" })
+  );
+
+  const details = (payload?.address ?? {}) as Record<string, unknown>;
+  const parts = nominatimAddressParts(details);
+  const address = composeAddress(parts);
+  if (!address) {
+    throw new Error("no address at those coordinates");
+  }
+
+  return {
+    address,
+    locality: clean(parts?.area),
+    city: clean(parts?.city),
+    state: clean(parts?.state),
+    postcode: clean(parts?.postcode),
+    country: clean(parts?.country),
+    attribution: "© OpenStreetMap contributors",
+    cached: false,
+  };
 }
 
 /**
@@ -157,59 +376,48 @@ export async function reverseGeocode(
   lat: number,
   lon: number
 ): Promise<ReverseGeocodeResult> {
-  const key = cacheKey(lat, lon);
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-    return { ...hit.value, cached: true };
+  const key = ENV.googleMapsServerKey?.trim();
+  const providers: Array<{
+    name: string;
+    run: () => Promise<ReverseGeocodeResult>;
+  }> = [];
+
+  if (key) {
+    providers.push({
+      name: "google",
+      run: () => reverseGeocodeGoogle(lat, lon, key),
+    });
   }
-
-  const url = new URL(NOMINATIM_URL);
-  url.searchParams.set("lat", lat.toFixed(6));
-  url.searchParams.set("lon", lon.toFixed(6));
-  url.searchParams.set("format", "jsonv2");
-  // `addressdetails=1` is what fills the `address` object `composeAddress` reads.
-  url.searchParams.set("addressdetails", "1");
-  url.searchParams.set("zoom", "18");
-  url.searchParams.set("accept-language", "en");
-
-  const payload = await withUpstreamSlot(async () => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-    try {
-      const response = await fetch(url, {
-        headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`nominatim responded ${response.status}`);
-      }
-      return (await response.json()) as Record<string, unknown>;
-    } finally {
-      clearTimeout(timer);
-    }
+  providers.push({
+    name: "nominatim",
+    run: () => reverseGeocodeNominatim(lat, lon),
   });
 
-  const address = composeAddress(payload?.address as Record<string, unknown>);
-  if (!address) {
-    // A coordinate in the middle of nowhere, or a sea. Not an error worth
-    // retrying upstream — the customer can still type their address.
-    throw new Error("no address at those coordinates");
+  let lastError: unknown;
+  for (const provider of providers) {
+    const cacheKeyValue = cacheKey(provider.name, lat, lon);
+    const hit = cache.get(cacheKeyValue);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      return { ...hit.value, cached: true };
+    }
+
+    try {
+      const result = await provider.run();
+      remember(cacheKeyValue, result);
+      return result;
+    } catch (error) {
+      lastError = error;
+      // Logged rather than swallowed: a fallback that engages every request
+      // means the Google key is missing, mis-restricted or out of quota, and
+      // that needs fixing before it becomes a bill.
+      console.warn(
+        `[geocode] ${provider.name} reverse-geocode failed; trying next provider`,
+        error instanceof Error ? error.message : error
+      );
+    }
   }
 
-  const details = (payload?.address ?? {}) as Record<string, unknown>;
-  const str = (value: unknown) =>
-    typeof value === "string" && value.trim() ? value.trim() : null;
-
-  const result: ReverseGeocodeResult = {
-    address,
-    locality: str(details.neighbourhood) ?? str(details.suburb),
-    city: str(details.city) ?? str(details.town) ?? str(details.village),
-    state: str(details.state),
-    postcode: str(details.postcode),
-    country: str(details.country),
-    attribution: "© OpenStreetMap contributors",
-    cached: false,
-  };
-  remember(key, result);
-  return result;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("no geocoding provider available");
 }
