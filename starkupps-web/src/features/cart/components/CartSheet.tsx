@@ -28,6 +28,7 @@ import { cn } from "@/utils/cn";
 import { errorMessage } from "@/utils/errors";
 import { classifyOrderError, orderErrorDetail } from "@/utils/order-errors";
 import { reverseGeocodeAddress } from "@/api/public";
+import { OrderConfirmation, type ConfirmationOrder } from "@/features/checkout/OrderConfirmation";
 import {
   availableOrderTypes,
   hasReachableOrderType,
@@ -81,7 +82,6 @@ type UpsellSuggestion = {
 import { recordOrder } from "@/features/profile/storage";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
 import { CategoryImage } from "@/features/menu/category-images";
-import { useSiteSettings } from "@/features/content/useSiteContent";
 
 const orderTypes: { id: OrderType; label: string }[] = [
   { id: "dine-in", label: ORDER_TYPE_LABELS["dine-in"] },
@@ -107,13 +107,13 @@ export function CartSheet() {
     error: outletError,
   } = useOutlet();
   const menuQ = usePublicMenu();
-  const { data: site } = useSiteSettings();
   const { user } = useAuth();
   const { addresses } = useSavedAddresses(user?.id);
   const [authOpen, setAuthOpen] = useState(false);
   const [addrPick, setAddrPick] = useState<string | null>(null);
 
   const [checkout, setCheckout] = useState(false);
+  const [confirmation, setConfirmation] = useState<ConfirmationOrder | null>(null);
   const [locateState, setLocateState] = useState(initialLocateState);
   const [geocodeNote, setGeocodeNote] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState("");
@@ -561,13 +561,57 @@ export function CartSheet() {
 
       const summary =
         parsed.orderType === "delivery"
-          ? `Delivery to ${parsed.address}`
+          ? parsed.address
           : parsed.orderType === "dine-in"
-            ? `Dine-in at ${outlet?.name ?? "StarKupps"}`
-            : `Takeaway — ${site?.hoursShort || "ready during opening hours"}`;
+            ? (outlet?.name ?? "StarKupps")
+            : "Counter pickup";
 
-      toast.success(`Order #${order.orderNumber} confirmed, ${parsed.name}!`, {
-        description: `${lines.length} item${lines.length === 1 ? "" : "s"} · ${inr(order.total)} · ${summary}`,
+      /**
+       * Full-screen confirmation instead of a toast.
+       *
+       * The toast said the order was confirmed in a corner for four seconds,
+       * which is the worst possible place for the one thing the customer needs:
+       * the ticket number they quote at the counter. By the time it appeared the
+       * cart had already been cleared, so the sheet behind it was empty and the
+       * message looked like it belonged to nothing.
+       *
+       * State is captured *before* `clear()` runs, so the summary reports what
+       * was actually ordered rather than an emptied cart.
+       */
+      setConfirmation({
+        orderNumber: order.orderNumber,
+        total: order.total,
+        itemCount: lines.reduce((sum, line) => sum + line.qty, 0),
+        type: parsed.orderType,
+        outletName: outlet?.name ?? undefined,
+        customerName: parsed.name,
+        phone: parsed.phone,
+        address: parsed.orderType === "delivery" ? parsed.address : null,
+        notes: parsed.notes || null,
+        items: lines.map((line) => ({
+          name: line.name,
+          variantName: line.variantName || null,
+          qty: line.qty,
+          unitPrice: line.unitPrice,
+          // Rounded per line to match the server, so the column sums to the
+          // subtotal the customer is shown. Summing unrounded figures can drift
+          // by a paisa across several lines and make the receipt look wrong.
+          lineTotal: Math.round(line.unitPrice * line.qty * 100) / 100,
+          options: line.optionLabels,
+        })),
+        // Built from the server's own figures, never recomputed here: the client
+        // has no authority over what was charged, and a locally-derived total
+        // would be able to disagree with the order that was actually persisted.
+        pricing: [
+          { label: "Subtotal", value: order.subtotal },
+          ...(order.couponDiscount > 0
+            ? [{ label: "Discount", value: order.couponDiscount, negative: true }]
+            : []),
+          ...(order.packing > 0 ? [{ label: "Packaging", value: order.packing }] : []),
+          ...(order.delivery > 0 ? [{ label: "Delivery", value: order.delivery }] : []),
+          ...(order.tax > 0 ? [{ label: "Tax", value: order.tax }] : []),
+        ],
+        summary,
       });
 
       // Persist to the dashboard's order history (device-level, works signed-out too)
@@ -575,7 +619,10 @@ export function CartSheet() {
         id: order.id,
         orderNumber: order.orderNumber,
         total: order.total,
-        itemCount: lines.length,
+        // Summed quantity, not line count: the history list and the
+        // confirmation both say "3 items" where three drinks are three items.
+        // It previously counted lines, so one line of quantity 3 read as 1.
+        itemCount: lines.reduce((sum, line) => sum + line.qty, 0),
         type: parsed.orderType,
         outletName: outlet?.name ?? undefined,
         phone: parsed.phone,
@@ -1555,6 +1602,22 @@ export function CartSheet() {
           </motion.aside>
         )}
       </AnimatePresence>
+      {/* Mounted outside the sheet's AnimatePresence: the sheet closes on
+          success, and an overlay nested inside a closing panel would be
+          unmounted with it before it could be read. */}
+      <OrderConfirmation
+        order={confirmation}
+        onDone={() => setConfirmation(null)}
+        {...(user
+          ? {
+              onTrack: () => {
+                setConfirmation(null);
+                setOpen(false);
+                window.location.assign("/account");
+              },
+            }
+          : {})}
+      />
       {/* Sign-in dialog outlives the sheet so login isn't lost if the cart closes */}
       <AuthDialog
         open={authOpen}
