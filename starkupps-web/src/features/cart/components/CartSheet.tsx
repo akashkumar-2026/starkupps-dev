@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -34,6 +34,9 @@ import {
   hasReachableOrderType,
   parseOutletServices,
 } from "@/utils/outlet-services";
+import { LocationMap } from "@/features/checkout/LocationMap";
+import { isMapsEnabled } from "@/config/env";
+import { MAP_REVERSE_GEOCODE_DEBOUNCE_MS } from "@/features/checkout/maps-loader";
 import {
   initialLocateState,
   locate,
@@ -264,10 +267,34 @@ export function CartSheet() {
         coords: { lat: position.lat, lon: position.lon },
         reason: null,
       });
+      await fillAddressFromCoords(position);
+    } catch {
+      setLocateState({
+        status: "error",
+        coords: null,
+        reason: "unavailable",
+      });
+    }
+  };
+
+  /**
+   * Reverse-geocodes a coordinate into the address field.
+   *
+   * Shared by the initial lookup and by every marker move, because the two must
+   * not be able to drift: a customer who drags the pin expects the field to
+   * behave exactly as it did when the pin was first dropped.
+   *
+   * On failure the *existing* address is deliberately left alone. The pin stays
+   * where they put it, so they can keep adjusting and try again, rather than
+   * having a good address wiped by a transient lookup error.
+   */
+  const fillAddressFromCoords = useCallback(
+    async (coords: { lat: number; lon: number }) => {
+      setLocateState((prev) => ({ ...prev, status: "located", coords, reason: null }));
       try {
         const result = await reverseGeocodeAddress({
-          lat: position.lat,
-          lon: position.lon,
+          lat: coords.lat,
+          lon: coords.lon,
         });
         form.setValue("address", result.address, {
           shouldDirty: true,
@@ -280,20 +307,49 @@ export function CartSheet() {
       } catch {
         // The position worked but the lookup did not. Say so plainly rather than
         // showing an empty field with no explanation.
-        setLocateState({
+        setLocateState((prev) => ({
+          ...prev,
           status: "error",
-          coords: { lat: position.lat, lon: position.lon },
+          coords,
           reason: "unavailable",
-        });
+        }));
       }
-    } catch {
-      setLocateState({
-        status: "error",
-        coords: null,
-        reason: "unavailable",
-      });
-    }
-  };
+    },
+    [form],
+  );
+
+  /**
+   * The customer moved the pin.
+   *
+   * Debounced because a drag fires one `dragend`, but nudging a pin produces a
+   * burst of them, and each one costs a rate-limited reverse-geocode request.
+   * The server dedupes on ~11 m so repeat positions are cheap, but the customer
+   * should not be told the limit was reached for simply aiming carefully.
+   *
+   * `coords` stays the source of truth for the pin immediately, so the marker
+   * never lags behind the pointer while the lookup is in flight.
+   */
+  const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleMapMove = useCallback(
+    (coords: { lat: number; lon: number }) => {
+      setLocateState((prev) => ({ ...prev, coords, status: "located", reason: null }));
+      if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+      geocodeTimerRef.current = setTimeout(() => {
+        geocodeTimerRef.current = null;
+        void fillAddressFromCoords(coords);
+      }, MAP_REVERSE_GEOCODE_DEBOUNCE_MS);
+    },
+    [fillAddressFromCoords],
+  );
+
+  // A pending lookup must not fire into a torn-down sheet, or into a checkout
+  // that has switched to takeaway (which has no address at all).
+  useEffect(
+    () => () => {
+      if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    },
+    [],
+  );
 
   // Switching away from delivery must not leave a location prompt or note behind
   // for a method that has no address. `handleOrderTypeSwitch` already clears the
@@ -1473,12 +1529,28 @@ export function CartSheet() {
                                     </p>
                                   ) : null}
 
+                                  {/* ── The correction map ──
+                                      Only rendered once a position exists and a
+                                      key is configured. GPS is street-accurate at
+                                      best, so the pin is offered as something to
+                                      correct; moving it re-runs the lookup. A
+                                      missing key, a blocked script or any Maps
+                                      failure simply hides this block and leaves
+                                      the field above fully usable. */}
+                                  {isMapsEnabled && locateState.coords ? (
+                                    <LocationMap
+                                      coords={locateState.coords}
+                                      onMove={handleMapMove}
+                                      className="mt-3"
+                                    />
+                                  ) : null}
+
                                   {geocodeNote ? (
                                     <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
                                       <MapPin className="mt-0.5 size-3.5 shrink-0 text-primary" />
                                       <span>
-                                        Filled from your location — check it and add your house
-                                        number. <span className="opacity-70">{geocodeNote}</span>
+                                        Filled from your location — check it, or drag the pin below.{" "}
+                                        <span className="opacity-70">{geocodeNote}</span>
                                       </span>
                                     </p>
                                   ) : null}
