@@ -1427,9 +1427,19 @@ export const publicRouter = router({
       // A tighter budget than the generic public write limit: each call can cost
       // an upstream request, so the blast radius of an unauthenticated caller
       // has to be small.
+      //
+      // Sized for the map, not for a single lookup. Correcting a pin is a normal
+      // part of the flow — a customer typically nudges it a few times before it
+      // lands on their door — and every move spends one of these. At 10 the
+      // budget ran out mid-adjustment and the customer was told to type their
+      // address instead, which is the opposite of what the map is for.
+      //
+      // 30 per 15 minutes per IP is still a hard ceiling on an unauthenticated
+      // paid upstream, and repeated positions are absorbed by the coordinate
+      // cache in `lib/geocode` rather than reaching the provider at all.
       const limited = await consume(
         `public:geocode:${clientThrottleKey(ctx.req, "geocode")}`,
-        { max: 10, windowMs: 15 * 60 * 1000 }
+        { max: 30, windowMs: 15 * 60 * 1000 }
       );
       if (!limited.allowed) {
         throw new TRPCError({
