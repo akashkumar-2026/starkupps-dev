@@ -23,6 +23,7 @@ import {
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { dateText, dateTimeText } from "@/utils/format";
 
 const staffStatusMeta: Record<string, { label: string; cls: string }> = {
   pending: {
@@ -475,8 +476,8 @@ function AllStaff() {
                       </td>
                       <td className="px-4 py-3 text-xs text-[#6F6257]">
                         {s.joiningDate
-                          ? new Date(s.joiningDate).toLocaleDateString()
-                          : new Date(s.createdAt).toLocaleDateString()}
+                          ? dateText(s.joiningDate)
+                          : dateText(s.createdAt)}
                       </td>
                       <td className="px-4 py-3">
                         <Button
@@ -1032,8 +1033,7 @@ function StaffOverviewTab({ staffId }: { staffId: number }) {
         <p className="mt-2 text-xs">Phone: {s.phone ?? "—"}</p>
         <p className="text-xs">Email: {s.email}</p>
         <p className="text-xs">
-          DOB:{" "}
-          {s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString() : "—"}
+          DOB: {s.dateOfBirth ? dateText(s.dateOfBirth) : "—"}
         </p>
         <p className="text-xs">Emergency: {s.emergencyContact ?? "—"}</p>
       </div>
@@ -1044,9 +1044,7 @@ function StaffOverviewTab({ staffId }: { staffId: number }) {
         </p>
         <p className="text-xs">
           Joined:{" "}
-          {s.joiningDate
-            ? new Date(s.joiningDate).toLocaleDateString()
-            : new Date(s.createdAt).toLocaleDateString()}
+          {s.joiningDate ? dateText(s.joiningDate) : dateText(s.createdAt)}
         </p>
         <p className="text-xs">Status: {s.status}</p>
       </div>
@@ -1572,7 +1570,7 @@ function StaffActivityTab({ staffId }: { staffId: number }) {
             {a.action} — {a.entityType} #{a.entityId ?? ""}
           </p>
           <p className="text-[11px] text-[#8B7E71]">
-            {new Date(a.createdAt).toLocaleString()} • {a.staffName}
+            {dateTimeText(a.createdAt)} • {a.staffName}
           </p>
         </li>
       ))}
@@ -2260,8 +2258,7 @@ function ActivityView() {
             {a.staffName} — {a.action} {a.entityType} #{a.entityId ?? ""}
           </p>
           <p className="text-[11px] text-[#8B7E71]">
-            {new Date(a.createdAt).toLocaleString()} • Outlet{" "}
-            {a.outletId ?? "—"}
+            {dateTimeText(a.createdAt)} • Outlet {a.outletId ?? "—"}
           </p>
         </li>
       ))}
