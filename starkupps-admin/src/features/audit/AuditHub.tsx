@@ -11,6 +11,7 @@ import { trpc } from "@/api/trpc";
 import { useOutlet } from "@/state/outlet-provider";
 import { Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { dateTimeText } from "@/utils/format";
 
 export default function AuditHub() {
   const { selectedId } = useOutlet();
@@ -127,7 +128,7 @@ export default function AuditHub() {
                 {q.data.items.map((e: any) => (
                   <tr key={e.id} className="text-xs">
                     <td className="px-3 py-3 text-[#6F6257] whitespace-nowrap">
-                      {new Date(e.createdAt).toLocaleString()}
+                      {dateTimeText(e.createdAt)}
                     </td>
                     <td className="px-3 py-3 font-bold">{e.actorName}</td>
                     <td className="px-3 py-3">
