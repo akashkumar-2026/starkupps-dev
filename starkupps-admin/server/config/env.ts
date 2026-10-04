@@ -58,6 +58,25 @@ export const ENV = {
   supabaseAnonKey: getEnv("SUPABASE_ANON_KEY"),
   supabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY"),
 
+  /**
+   * Google Geocoding API key — **server-side only, never a `VITE_` variable**.
+   *
+   * This is the key that stays secret. It is read here and used by
+   * `server/lib/geocode.ts` to turn the coordinates from `navigator.geolocation`
+   * into a delivery address, so it never reaches the browser bundle and cannot
+   * be lifted from the page.
+   *
+   * It is deliberately a *different* key from the storefront's
+   * `VITE_GOOGLE_MAPS_API_KEY`. A browser key is readable by anyone who loads the
+   * page, so keeping the two separate means a leaked map key cannot be used to
+   * burn the geocoding quota. In Google Cloud Console each should be restricted to
+   * its own API (this one: Geocoding API) and this one should also be IP-restricted
+   * to the gateway.
+   *
+   * Absent ⇒ the storefront falls back to Nominatim. See `lib/geocode.ts`.
+   */
+  googleMapsServerKey: getEnv("GOOGLE_MAPS_API_KEY"),
+
   // Owner — the initial admin user (by openId/email). Used to grant admin role on first login.
   ownerOpenId: getEnv(
     "OWNER_OPEN_ID",
