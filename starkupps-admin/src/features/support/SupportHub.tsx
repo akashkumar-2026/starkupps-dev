@@ -16,6 +16,7 @@ import { Loader2, Plus, Search } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { dateTimeText } from "@/utils/format";
 
 export default function SupportHub({ detailId }: { detailId?: number }) {
   const [, setLocation] = useLocation();
@@ -470,7 +471,7 @@ function TicketDetail({ id, onBack }: { id: number; onBack: () => void }) {
                     {m.message}
                   </p>
                   <p className="text-[11px] text-[#87796C]">
-                    {new Date(m.createdAt).toLocaleString()}
+                    {dateTimeText(m.createdAt)}
                   </p>
                 </div>
               ))
