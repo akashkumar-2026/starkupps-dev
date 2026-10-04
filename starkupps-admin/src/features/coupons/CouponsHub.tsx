@@ -1,4 +1,4 @@
-import { inr } from "@/utils/format";
+import { dateText, dateTimeText, inr, parseDbTimestamp } from "@/utils/format";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/components/shared/dialog";
 import { Input } from "@/components/ui/input";
@@ -236,7 +236,7 @@ function CouponsList() {
                     `${r.discountType}:${r.discountValue}`,
                     `${r.usedCount}/${r.usageLimit ?? "∞"}`,
                     r.derivedStatus,
-                    new Date(r.createdAt).toISOString(),
+                    parseDbTimestamp(r.createdAt)?.toISOString() ?? "",
                   ].join(",")
                 ),
               ].join("\n");
@@ -371,7 +371,7 @@ function CouponsList() {
                       </span>
                     </td>
                     <td className="px-3 py-3 text-xs text-[#6F6257]">
-                      {new Date(c.createdAt).toLocaleDateString()}
+                      {dateText(c.createdAt)}
                     </td>
                     <td className="px-3 py-3">
                       <Button
@@ -599,9 +599,7 @@ function CouponCreateDialog({
             {form.minimumOrder && Number(form.minimumOrder) > 0
               ? `Minimum order ${inr(Number(form.minimumOrder))}`
               : "No minimum"}{" "}
-            {form.endAt
-              ? `• Valid until ${new Date(form.endAt).toLocaleDateString()}`
-              : ""}
+            {form.endAt ? `• Valid until ${dateText(form.endAt)}` : ""}
           </p>
         </div>
 
@@ -1343,7 +1341,7 @@ function RedemptionsTab({ couponId }: { couponId: number }) {
             {q.data.items.map((r: any) => (
               <tr key={r.id} className="text-xs">
                 <td className="px-3 py-3 text-[#6F6257]">
-                  {new Date(r.createdAt).toLocaleString()}
+                  {dateTimeText(r.createdAt)}
                 </td>
                 <td className="px-3 py-3 font-bold">
                   {r.customerName ?? "—"}
