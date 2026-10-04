@@ -284,7 +284,7 @@ function OrderTicketBody({ order }: { order: OrderDetailRecord }) {
             Placed
           </p>
           <p className="mt-0.5 text-sm font-extrabold">
-            {order.createdAt ? timeLabel(new Date(order.createdAt)) : "—"}
+            {order.createdAt ? timeLabel(order.createdAt) : "—"}
           </p>
           <p className="text-[11px] text-[#827568]">
             {dateText(order.createdAt)}
@@ -302,7 +302,7 @@ function OrderTicketBody({ order }: { order: OrderDetailRecord }) {
           )}
           {order.updatedAt && order.updatedAt !== order.createdAt ? (
             <p className="mt-1.5 text-[10px] text-[#8A7D70]">
-              Updated {timeLabel(new Date(order.updatedAt))}
+              Updated {timeLabel(order.updatedAt)}
             </p>
           ) : null}
         </div>
