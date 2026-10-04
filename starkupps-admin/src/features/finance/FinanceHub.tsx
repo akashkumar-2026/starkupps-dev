@@ -1,4 +1,4 @@
-import { inr } from "@/utils/format";
+import { dateText, inr } from "@/utils/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/components/shared/dialog";
@@ -264,7 +264,7 @@ function TransactionsTab({ outletId }: { outletId: number | null }) {
                     </Badge>
                   </td>
                   <td className="px-3 py-3 text-[#6F6257]">
-                    {new Date(t.createdAt).toLocaleDateString()}
+                    {dateText(t.createdAt)}
                   </td>
                 </tr>
               ))}
