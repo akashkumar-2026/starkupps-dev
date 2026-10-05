@@ -89,7 +89,7 @@ function UpdatePassword() {
       <PageMeta title="Set a new password" noIndex />
 
       <Header />
-      <main className="mx-auto w-full max-w-md px-4 py-10">
+      <main className="shell max-w-md py-10 sm:py-14">
         <Card className="rounded-3xl shadow-card">
           <CardHeader className="text-center">
             <p className="eyebrow text-primary">Password reset</p>
@@ -108,7 +108,7 @@ function UpdatePassword() {
                 <p className="mt-1 text-sm text-muted-foreground">
                   Reset links expire after one use. Request a fresh one from the sign-in form.
                 </p>
-                <Button asChild className="mt-4 h-10 rounded-xl">
+                <Button asChild className="mt-4 min-h-11 rounded-xl">
                   <Link to="/login">Back to sign in</Link>
                 </Button>
               </div>

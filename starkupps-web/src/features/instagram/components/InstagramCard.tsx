@@ -38,7 +38,7 @@ export function InstagramTypeBadge({
   return (
     <span
       className={cn(
-        "material inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground",
+        "material inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground",
         className,
       )}
     >
@@ -60,7 +60,7 @@ function ArtworkFallback({ post }: { post: PublicInstagramPost }) {
         </div>
       </div>
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#211914]/90 via-[#211914]/45 to-transparent px-5 pb-5 pt-24 text-white">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75">
           From the StarKupps feed
         </p>
         {caption ? (
@@ -135,7 +135,7 @@ export function InstagramCard({ post, duplicate = false, onOpen }: InstagramCard
       className="group/ig relative shrink-0 snap-start"
       style={{ width: "var(--ig-card-w)" }}
     >
-      <div className="relative aspect-[4/5] overflow-hidden rounded-[1.4rem] border border-border bg-card shadow-card transition duration-300 group-hover/ig:-translate-y-1 group-hover/ig:shadow-[0_20px_48px_rgba(44,31,22,0.18)]">
+      <div className="relative aspect-[4/5] overflow-hidden rounded-[1.4rem] border border-border bg-card shadow-card transition duration-300 group-hover/ig:-translate-y-1 group-hover/ig:shadow-[0_20px_48px_rgba(44,31,22,0.18)] group-focus-within/ig:-translate-y-1">
         {hasImage ? (
           <img
             src={post.thumbnailUrl ?? undefined}
@@ -178,8 +178,8 @@ export function InstagramCard({ post, duplicate = false, onOpen }: InstagramCard
           } on Instagram`}
           className="absolute inset-0 z-10 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary"
         >
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-espresso/0 transition-colors duration-300 group-hover/ig:bg-espresso/15 group-focus-visible/ig:bg-espresso/15">
-            <span className="grid size-12 translate-y-2 place-items-center rounded-full bg-white/95 text-foreground opacity-0 shadow-lg transition duration-200 group-hover/ig:translate-y-0 group-hover/ig:opacity-100 group-focus-visible/ig:translate-y-0 group-focus-visible/ig:opacity-100">
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-espresso/0 transition-colors duration-300 group-hover/ig:bg-espresso/15 group-focus-within/ig:bg-espresso/15">
+            <span className="grid size-12 translate-y-2 place-items-center rounded-full bg-white/95 text-foreground opacity-0 shadow-lg transition duration-200 group-hover/ig:translate-y-0 group-hover/ig:opacity-100 group-focus-within/ig:translate-y-0 group-focus-within/ig:opacity-100">
               <ArrowUpRight className="size-5" />
             </span>
           </span>

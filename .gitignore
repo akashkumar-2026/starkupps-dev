@@ -63,6 +63,8 @@ provisioned-credentials.json
 # Live secret files — never track (use env vars / secret manager instead)
 creds.txt
 **/creds.txt
+*-creds.txt
+**/*-creds.txt
 starkupps-access-token-key.txt
 **/starkupps-access-token-key.txt
 sbp_*.txt

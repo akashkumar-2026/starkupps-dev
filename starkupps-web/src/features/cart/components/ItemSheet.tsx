@@ -119,12 +119,12 @@ export function ItemSheet({
               </Pressable>
             </div>
 
-            <div className="space-y-6 p-5 pb-32">
+            <div className="space-y-6 p-5 pb-32 sm:pb-28">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-2xl">{item.name}</h2>
                   {isComingSoon && (
-                    <span className="rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-primary-foreground">
+                    <span className="rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-primary-foreground">
                       Coming Soon
                     </span>
                   )}
@@ -167,7 +167,7 @@ export function ItemSheet({
                               {v.quantity} {v.unit}
                             </span>
                           )}
-                          {!v.available && <span className="text-[10px]">Unavailable</span>}
+                          {!v.available && <span className="text-[11px]">Unavailable</span>}
                         </span>
                         <span className="tabular-nums font-semibold">{inr(v.effectivePrice)}</span>
                       </Pressable>
@@ -237,7 +237,7 @@ export function ItemSheet({
               </div>
             </div>
 
-            <div className="material fixed inset-x-0 bottom-0 border-t border-border p-4 sm:absolute">
+            <div className="material fixed inset-x-0 bottom-0 border-t border-border px-4 pt-4 pb-safe-lg sm:absolute sm:inset-x-0 sm:bottom-0">
               <Pressable
                 disabled={variantUnavailable || noVariantSelected}
                 onClick={() => {

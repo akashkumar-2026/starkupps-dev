@@ -125,7 +125,7 @@ function TrackableOrder({ order }: { order: ReturnType<typeof useRecentOrders>[n
           size="sm"
           disabled={busy}
           onClick={track}
-          className="mt-1 h-8 gap-1.5 rounded-full px-3 text-xs font-semibold text-primary"
+          className="mt-1 min-h-11 gap-1.5 rounded-full px-4 text-sm font-semibold text-primary"
         >
           {busy ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -171,7 +171,7 @@ export function OrdersTab() {
             live status
           </p>
         </div>
-        <Button asChild variant="outline" className="h-10 rounded-xl">
+        <Button asChild variant="outline" className="min-h-11 rounded-xl">
           <Link to="/">Order again</Link>
         </Button>
       </div>

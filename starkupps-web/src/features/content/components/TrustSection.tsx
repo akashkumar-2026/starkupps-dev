@@ -29,11 +29,11 @@ export function TrustSection() {
   if (!showHygiene && !showStats && !showReviews) return null;
 
   return (
-    <section className="mx-auto w-full max-w-6xl px-4 py-14">
+    <section className="shell section-y">
       <p className="eyebrow text-primary">Why trust us</p>
       {site?.trustHeading && <h2 className="display-lg mt-2 max-w-2xl">{site.trustHeading}</h2>}
 
-      <div className="mt-8 grid gap-3 md:grid-cols-3">
+      <div className="mt-8 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
         {showHygiene && (
           <div className="rounded-3xl border border-border bg-card p-5 shadow-card">
             <span className="grid size-11 place-items-center rounded-full bg-accent text-primary">
@@ -43,9 +43,14 @@ export function TrustSection() {
             {site?.fssaiLicense && (
               <div className="mt-4 flex items-center gap-3 rounded-2xl border border-primary/30 bg-accent/60 p-3">
                 <BadgeCheck className="size-5 shrink-0 text-primary" />
-                <div>
+                {/* `min-w-0` + `break-all`: the licence number is the one
+                    unbreakable token in this card, and at 2 columns in the
+                    640-767px band there is not enough room for it. */}
+                <div className="min-w-0">
                   <p className="eyebrow text-muted-foreground">FSSAI licence</p>
-                  <p className="text-base font-semibold tabular-nums">{site.fssaiLicense}</p>
+                  <p className="text-base font-semibold tabular-nums break-all">
+                    {site.fssaiLicense}
+                  </p>
                 </div>
               </div>
             )}
@@ -65,14 +70,39 @@ export function TrustSection() {
               <Star className="size-5 fill-primary" />
             </span>
             <h3 className="mt-4 text-xl">What customers say</h3>
-            <div className="relative mt-4 h-[264px] overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]">
+            {/*
+              The review list.
+
+              On a pointer device this is an auto-scrolling marquee inside a
+              fixed-height, `overflow-hidden` window.
+
+              On touch it cannot be, and previously it wasn't: `overflow-hidden`
+              means no scrolling, `:hover` never sticks so the marquee never
+              paused, and the only way to reach a review past the fold was to
+              wait for the loop. Every review after the first few was effectively
+              unreachable on a phone.
+
+              So below `lg` the window becomes a real scroll area with a
+              `fade` mask instead of a hard clip — the visitor drags it. Above
+              `lg` the marquee runs as before. Both paths render the same list;
+              only the presentation differs, and `:hover`/`:focus-within` still
+              pauses the desktop animation for mouse and keyboard users.
+            */}
+            <div
+              className="relative mt-4 max-h-[19rem] overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)] lg:max-h-[264px] lg:overflow-hidden"
+              tabIndex={0}
+              role="group"
+              aria-label="Customer reviews"
+            >
               {/* Duplicated so the CSS marquee loops seamlessly. aria-hidden on the
-                  copy keeps screen readers from hearing each review twice. */}
+                  copy keeps screen readers from hearing each review twice, and on
+                  touch the duplicate is hidden entirely (see styles.css). */}
               <ul className="review-track flex flex-col gap-4" aria-live="off">
                 {[...(reviews ?? []), ...(reviews ?? [])].map((review, idx) => (
                   <li
                     key={`${review.id}-${idx}`}
                     aria-hidden={idx >= (reviews?.length ?? 0) ? true : undefined}
+                    data-duplicate={idx >= (reviews?.length ?? 0) ? "true" : undefined}
                     className="flex gap-3"
                   >
                     <span

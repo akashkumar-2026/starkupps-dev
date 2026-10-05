@@ -813,7 +813,7 @@ export function CartSheet() {
         {open && (
           <motion.aside
             key="cart"
-            className="material fixed inset-x-0 bottom-0 z-cart max-h-[85svh] overflow-hidden rounded-t-3xl border-t border-border shadow-sheet sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[26rem] sm:max-h-none sm:rounded-t-none sm:rounded-l-3xl sm:border-l"
+            className="material fixed inset-x-0 bottom-0 z-cart max-h-[85svh] overflow-hidden rounded-t-3xl border-t border-border shadow-sheet sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[26rem] sm:max-h-none sm:rounded-t-none sm:rounded-l-3xl sm:border-l sm:border-t-0"
             initial={reduced ? { opacity: 0 } : { y: "100%" }}
             animate={reduced ? { opacity: 1 } : { y: 0 }}
             exit={reduced ? { opacity: 0 } : { y: "100%" }}
@@ -839,7 +839,7 @@ export function CartSheet() {
                   <Pressable
                     onClick={resetCheckout}
                     aria-label="Back to cart"
-                    className="grid size-8 place-items-center rounded-full border border-border bg-card"
+                    className="pressable grid size-11 place-items-center rounded-full border border-border bg-card"
                   >
                     <ArrowLeft className="size-4" />
                   </Pressable>
@@ -1132,7 +1132,7 @@ export function CartSheet() {
                   )}
                 </div>
 
-                <div className="border-t border-border p-4">
+                <div className="pb-safe-lg border-t border-border px-4 pt-4">
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
                       {orderType === "delivery"
@@ -1235,7 +1235,7 @@ export function CartSheet() {
                         <Link
                           to="/account"
                           onClick={() => setOpen(false)}
-                          className="flex min-h-9 shrink-0 items-center rounded-full px-3 text-xs font-semibold text-primary hover:underline"
+                          className="pressable flex min-h-11 shrink-0 items-center rounded-full px-3 text-sm font-semibold text-primary hover:underline"
                         >
                           Manage
                         </Link>
@@ -1372,7 +1372,8 @@ export function CartSheet() {
                             <FormControl>
                               <Input
                                 placeholder="10-digit mobile number"
-                                inputMode="numeric"
+                                type="tel"
+                                inputMode="tel"
                                 autoComplete="tel"
                                 aria-required
                                 maxLength={10}
@@ -1509,7 +1510,7 @@ export function CartSheet() {
                                     onClick={useCurrentLocation}
                                     disabled={locating}
                                     className={cn(
-                                      "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors",
+                                      "pressable inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm font-semibold transition-colors",
                                       locating
                                         ? "border-border text-muted-foreground"
                                         : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10",
@@ -1637,7 +1638,7 @@ export function CartSheet() {
                     </div>
                   </div>
 
-                  <div className="border-t border-border p-4">
+                  <div className="pb-safe-lg border-t border-border px-4 pt-4">
                     {/* `isSubmitting` already blocks double submission; the two extra
                         conditions stop a submission that could only be refused,
                         which is the case where the customer is looking at a

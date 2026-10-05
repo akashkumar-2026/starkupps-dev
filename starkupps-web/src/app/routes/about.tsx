@@ -3,6 +3,7 @@ import { MapPin } from "lucide-react";
 
 import { PageMeta } from "@/app/PageMeta";
 import { Header } from "@/components/layout/Header";
+import { ResponsiveImage } from "@/components/shared/ResponsiveImage";
 import { CartSheet } from "@/features/cart/components/CartSheet";
 import { siteLinks } from "@/config/site";
 import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
@@ -31,7 +32,7 @@ function About() {
       />
 
       <Header />
-      <main className="mx-auto w-full max-w-3xl px-4 py-14">
+      <main className="shell max-w-3xl py-14 sm:py-16">
         <p className="eyebrow text-primary">Since 2021 · Munger, Bihar</p>
         <h1 className="display-lg mt-3">
           We started because nobody here made a decent cold coffee.
@@ -59,22 +60,34 @@ function About() {
           </p>
         </div>
 
+        {/*
+          These are the largest contentful paint candidates on this route and sit
+          above the fold on a phone, so they stay `eager` — lazy-loading the LCP
+          image delays it for no benefit. `sizes` caps the download at the two
+          columns this grid actually renders into.
+        */}
         <div className="mt-10 grid gap-3 sm:grid-cols-2">
-          <img
+          <ResponsiveImage
             src={spaceImg}
+            stem="space"
             alt="The StarKupps counter with the espresso machine and pastry case"
-            loading="lazy"
             width={1408}
             height={912}
-            className="h-56 w-full rounded-3xl object-cover shadow-card"
+            sizes="(min-width: 640px) 22rem, calc(100vw - 2rem)"
+            loading="eager"
+            decoding="async"
+            className="aspect-[4/3] w-full rounded-3xl object-cover shadow-card sm:aspect-[3/2]"
           />
-          <img
+          <ResponsiveImage
             src={coffeeImg}
+            stem="hero-coffee"
             alt="A freshly poured latte with steam rising"
-            loading="lazy"
             width={1600}
             height={1200}
-            className="h-56 w-full rounded-3xl object-cover shadow-card"
+            sizes="(min-width: 640px) 22rem, calc(100vw - 2rem)"
+            loading="eager"
+            decoding="async"
+            className="aspect-[4/3] w-full rounded-3xl object-cover shadow-card sm:aspect-[3/2]"
           />
         </div>
 
@@ -82,9 +95,11 @@ function About() {
           <h2 className="text-xl">Licences &amp; hygiene</h2>
           <dl className="mt-4 space-y-2 text-sm">
             {site?.fssaiLicense && (
-              <div className="flex justify-between gap-4">
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                 <dt className="text-muted-foreground">FSSAI licence</dt>
-                <dd className="font-medium tabular-nums">{site.fssaiLicense}</dd>
+                {/* `min-w-0` + `break-all`: a long licence string is the one
+                    unbreakable token on this page. */}
+                <dd className="min-w-0 font-medium tabular-nums break-all">{site.fssaiLicense}</dd>
               </div>
             )}
             {site?.trustClaim3 && (
@@ -110,7 +125,7 @@ function About() {
             href={links.directions}
             target="_blank"
             rel="noreferrer"
-            className="mt-6 flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-espresso px-5 text-base font-semibold text-espresso-foreground shadow-raised"
+            className="pressable mt-6 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-espresso px-5 text-center text-base font-semibold text-espresso-foreground shadow-raised sm:w-auto sm:px-8"
           >
             <MapPin className="size-5" />
             Get directions in Google Maps

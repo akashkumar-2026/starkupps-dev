@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { motion, useReducedMotion } from "motion/react";
+import { useReducedMotion } from "motion/react";
 import { ArrowDown, RefreshCw, Star } from "lucide-react";
 
 import { PageMeta } from "@/app/PageMeta";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Pressable } from "@/components/shared/Pressable";
+import { ResponsiveImage } from "@/components/shared/ResponsiveImage";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { CartSheet } from "@/features/cart/components/CartSheet";
 import { StickyCartBar } from "@/features/cart/components/StickyCartBar";
@@ -131,7 +132,7 @@ function StatsStrip() {
   if (facts.length === 0) return null;
   return (
     <section className="border-b border-border bg-card">
-      <div className="rubber-scroll mx-auto flex w-full max-w-6xl gap-6 px-4 py-5 text-sm">
+      <div className="rubber-scroll shell flex gap-6 py-5 text-sm">
         {facts.map((fact) => (
           <span
             key={fact.label}
@@ -177,16 +178,22 @@ function Home() {
       <Header />
       <main>
         <section className="relative overflow-hidden">
-          <motion.img
+          {/*
+            `sizes` is what stops a phone downloading the 1600px original: the
+            hero is full-bleed at every width, capped by `max-w-6xl` only for
+            the text column, not the image.
+          */}
+          <ResponsiveImage
             src={heroImg}
+            stem="hero-coffee"
             alt="A latte with steam rising in a terracotta cup at StarKupps"
             width={1600}
             height={1200}
+            sizes="100vw"
+            loading="eager"
             fetchPriority="high"
-            className="absolute inset-0 size-full object-cover"
-            initial={reducedMotion ? {} : { scale: 1.12 }}
-            animate={reducedMotion ? {} : { scale: 1 }}
-            transition={{ duration: 14, ease: "linear" }}
+            decoding="async"
+            className="hero-drift absolute inset-0 size-full object-cover"
           />
           <div className="absolute inset-0 bg-espresso/60" />
           <div className="relative mx-auto flex min-h-[86svh] w-full max-w-6xl flex-col justify-end px-4 pb-10 pt-24 text-espresso-foreground">
@@ -242,7 +249,7 @@ function Home() {
 
         <StatsStrip />
 
-        <section className="mx-auto w-full max-w-6xl px-4 pt-14">
+        <section className="shell pt-14">
           <CategoryGrid onSelect={scrollToMenu} />
         </section>
 

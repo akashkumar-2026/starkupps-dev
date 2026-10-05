@@ -150,7 +150,7 @@ export function MenuSection({
             <span className="inline-flex items-center gap-1.5">
               {c.label}
               {c.comingSoon && (
-                <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-primary">
+                <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-primary">
                   Coming Soon
                 </span>
               )}
@@ -229,7 +229,7 @@ export function MenuSection({
                     <div className="flex items-center gap-2">
                       <h3 className="text-base font-semibold">{activeCat.label}</h3>
                       {isCatComingSoon && (
-                        <span className="rounded-full bg-primary px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-primary-foreground">
+                        <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-primary-foreground">
                           Coming Soon
                         </span>
                       )}
@@ -287,7 +287,7 @@ export function MenuSection({
                         aria-hidden="true"
                         className="absolute inset-0 z-10 grid place-items-center rounded-2xl bg-foreground/55 px-2 text-center text-background backdrop-blur-sm"
                       >
-                        <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.12em]">
+                        <span className="text-[11px] font-extrabold uppercase leading-tight tracking-[0.12em]">
                           Coming
                           <br />
                           Soon
@@ -313,7 +313,7 @@ export function MenuSection({
                       </span>
                       <p className="truncate text-base font-semibold">{item.name}</p>
                       {isComingSoon && (
-                        <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-primary-foreground">
+                        <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-primary-foreground">
                           Coming Soon
                         </span>
                       )}

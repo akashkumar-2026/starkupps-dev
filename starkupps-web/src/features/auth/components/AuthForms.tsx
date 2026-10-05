@@ -37,7 +37,7 @@ export function EmailSignInForm({ onSuccess }: { onSuccess?: () => void }) {
         </p>
         <Button
           variant="outline"
-          className="mt-4 h-10 rounded-xl"
+          className="mt-4 min-h-11 rounded-xl"
           onClick={() => setView("signin")}
         >
           Back to sign in
@@ -73,6 +73,8 @@ export function EmailSignInForm({ onSuccess }: { onSuccess?: () => void }) {
             id={`${uid}-reset-email`}
             type="email"
             autoComplete="email"
+            inputMode="email"
+            enterKeyHint="next"
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -89,7 +91,7 @@ export function EmailSignInForm({ onSuccess }: { onSuccess?: () => void }) {
         <button
           type="button"
           onClick={() => setView("signin")}
-          className="mx-auto flex min-h-9 items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+          className="pressable mx-auto flex min-h-11 items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
         >
           <ArrowLeft className="size-4" />
           Back to sign in
@@ -129,6 +131,8 @@ export function EmailSignInForm({ onSuccess }: { onSuccess?: () => void }) {
           id={`${uid}-email`}
           type="email"
           autoComplete="email"
+          inputMode="email"
+          enterKeyHint="next"
           placeholder="you@example.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -141,7 +145,7 @@ export function EmailSignInForm({ onSuccess }: { onSuccess?: () => void }) {
           <button
             type="button"
             onClick={() => setView("forgot")}
-            className="min-h-9 px-1 text-xs font-semibold text-primary hover:underline"
+            className="pressable -mx-1 flex min-h-11 items-center px-1 text-sm font-semibold text-primary hover:underline"
           >
             Forgot password?
           </button>
@@ -191,7 +195,7 @@ export function EmailSignUpForm({
         </p>
         <Button
           variant="outline"
-          className="mt-4 h-10 rounded-xl"
+          className="mt-4 min-h-11 rounded-xl"
           onClick={() => {
             if (onSwitchToLogin) onSwitchToLogin();
             else navigate({ to: "/login" });
@@ -244,6 +248,7 @@ export function EmailSignUpForm({
         <Input
           id={`${uid}-name`}
           autoComplete="name"
+          enterKeyHint="next"
           placeholder="Aarav Kumar"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -256,6 +261,8 @@ export function EmailSignUpForm({
           id={`${uid}-email`}
           type="email"
           autoComplete="email"
+          inputMode="email"
+          enterKeyHint="next"
           placeholder="you@example.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}

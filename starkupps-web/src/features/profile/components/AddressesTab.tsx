@@ -82,7 +82,7 @@ function AddressDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent key={key} className="max-h-[90svh] overflow-y-auto rounded-3xl sm:max-w-md">
+      <DialogContent key={key} className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
             {initial ? "Edit address" : "Add delivery address"}
@@ -124,7 +124,7 @@ function AddressDialog({
               <Label htmlFor="addr-phone">Phone</Label>
               <Input
                 id="addr-phone"
-                inputMode="numeric"
+                inputMode="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value.replace(/[^\d+\s]/g, ""))}
                 className="h-11 rounded-xl"
@@ -185,7 +185,7 @@ export function AddressesTab({ user }: { user: User }) {
             Saved delivery spots — pick one at checkout in seconds.
           </p>
         </div>
-        <Button onClick={openNew} className="h-10 gap-1.5 rounded-xl">
+        <Button onClick={openNew} className="min-h-11 gap-1.5 rounded-xl">
           <Plus className="size-4" />
           Add address
         </Button>
@@ -215,7 +215,7 @@ export function AddressesTab({ user }: { user: User }) {
                   <button
                     onClick={() => openEdit(a)}
                     aria-label="Edit address"
-                    className="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    className="pressable grid size-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
                     <Pencil className="size-4" />
                   </button>
@@ -225,7 +225,7 @@ export function AddressesTab({ user }: { user: User }) {
                       toast.success("Address removed");
                     }}
                     aria-label="Delete address"
-                    className="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    className="pressable grid size-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -245,7 +245,7 @@ export function AddressesTab({ user }: { user: User }) {
                     setDefault(a.id);
                     toast.success("Default address updated");
                   }}
-                  className="mt-3 inline-flex min-h-9 items-center text-xs font-semibold text-primary hover:underline"
+                  className="pressable mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline"
                 >
                   Make default
                 </button>

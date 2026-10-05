@@ -28,7 +28,7 @@ function Signup() {
       />
 
       <Header />
-      <main className="mx-auto w-full max-w-md px-4 py-10">
+      <main className="shell max-w-md py-10 sm:py-14">
         <Card className="rounded-3xl shadow-card">
           <CardHeader className="text-center">
             <p className="eyebrow text-primary">Join StarKupps</p>
@@ -50,7 +50,10 @@ function Signup() {
             </p>
             <p className="text-center text-sm text-muted-foreground">
               Already have an account?{" "}
-              <Link to="/login" className="font-semibold text-primary hover:underline">
+              <Link
+                to="/login"
+                className="pressable -mx-1 inline-flex min-h-11 items-center rounded-lg px-1 font-semibold text-primary hover:underline"
+              >
                 Sign in
               </Link>
             </p>

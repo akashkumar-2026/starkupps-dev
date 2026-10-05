@@ -131,14 +131,14 @@ export function InstagramSection() {
                 <Pressable
                   onClick={() => marquee.nudge(-1)}
                   aria-label="Scroll the feed left"
-                  className="grid size-10 place-items-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow-chip transition-opacity duration-200 focus-visible:opacity-100 group-hover/ig-shell:opacity-100"
+                  className="pressable grid size-11 place-items-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow-chip transition-opacity duration-200 focus-visible:opacity-100 group-hover/ig-shell:opacity-100"
                 >
                   <ChevronLeft className="size-5" />
                 </Pressable>
                 <Pressable
                   onClick={() => marquee.nudge(1)}
                   aria-label="Scroll the feed right"
-                  className="grid size-10 place-items-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow-chip transition-opacity duration-200 focus-visible:opacity-100 group-hover/ig-shell:opacity-100"
+                  className="pressable grid size-11 place-items-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow-chip transition-opacity duration-200 focus-visible:opacity-100 group-hover/ig-shell:opacity-100"
                 >
                   <ChevronRight className="size-5" />
                 </Pressable>

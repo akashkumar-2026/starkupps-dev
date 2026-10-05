@@ -127,6 +127,14 @@ src/
 - **Errors** — report through `reportError()` from `@/utils/errors`. Add `ApiError`
   handling rather than swallowing failures in components.
 
+## Responsive design
+
+The storefront is mobile-first: most visitors arrive on a phone, so base styles
+target the smallest screen and `min-width` queries enhance upward. Breakpoints,
+the layout tokens, the per-pattern rules (navigation, hero, menu, cart/checkout,
+Instagram, forms, footer) and the image pipeline are all documented in
+[`RESPONSIVE.md`](./RESPONSIVE.md). Read it before adding a page or section.
+
 ## Deployment
 
 `npm run build` emits a fully static SPA in `dist/`. Host it anywhere — Netlify,

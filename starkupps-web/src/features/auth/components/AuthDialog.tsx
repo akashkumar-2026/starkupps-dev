@@ -28,8 +28,13 @@ export function AuthDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto rounded-3xl sm:max-w-md">
-        <DialogHeader className="text-center sm:text-center">
+      {/*
+          `DialogContent` is a bottom sheet below `sm` and a centred dialog above
+          it (see dialog.tsx). Only the width cap belongs here; the scroll
+          container is the body, so the close button stays reachable.
+        */}
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader className="px-6 pt-8 text-center">
           <p className="eyebrow text-primary">
             {main === "signin" ? "Welcome back" : "Join StarKupps"}
           </p>
@@ -44,7 +49,7 @@ export function AuthDialog({
         </DialogHeader>
 
         <Tabs value={main} onValueChange={(v) => setMain(v as MainTab)} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 rounded-xl">
+          <TabsList className="mx-6 grid w-[calc(100%-3rem)] grid-cols-2 rounded-xl">
             <TabsTrigger value="signin" className="rounded-lg">
               Sign in
             </TabsTrigger>
@@ -53,7 +58,7 @@ export function AuthDialog({
             </TabsTrigger>
           </TabsList>
 
-          <div className="mt-5 space-y-5">
+          <div className="mt-5 space-y-5 overflow-y-auto px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
             {!loading && !configured && (
               <Alert variant="destructive">
                 <AlertDescription>

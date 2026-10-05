@@ -50,6 +50,95 @@
   --shadow-card: 0 2px 10px -2px oklch(0.25 0.04 50 / 0.1);
   --shadow-raised: 0 12px 32px -12px oklch(0.25 0.04 50 / 0.22);
   --shadow-sheet: 0 -18px 60px -18px oklch(0.25 0.04 50 / 0.32);
+
+  /*
+   * Breakpoints — restated here so the scale is documented in the token layer
+   * rather than being implicit in Tailwind's defaults.
+   *
+   * These ARE Tailwind v4's defaults, deliberately left at their default values
+   * so every existing `sm:`/`md:`/`lg:` class in the codebase keeps its current
+   * meaning. Do not change these numbers to "tune" a layout — add a
+   * section/layout token (below) or a container query instead, so the decision
+   * lands in one place.
+   *
+   * The scale is mobile-first: base styles target the smallest screens and each
+   * `min-width` query progressively enhances. There are no max-width queries
+   * anywhere in this codebase, and none should be added.
+   *
+   *   base   < 640px   phone            (reference 360-430px)
+   *   sm    >= 640px   large phone / small tablet portrait
+   *   md    >= 768px   tablet portrait   (768, 834)
+   *   lg   >= 1024px   tablet landscape / small laptop (1024, 1180, 1280)
+   *   xl   >= 1280px   laptop / desktop
+   *   2xl  >= 1536px   large desktop     (1920)
+   */
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+  --breakpoint-2xl: 96rem;
+
+  /* Single source of truth for the page gutter. Tight on a phone, roomier on
+     tablet and up. New sections should use `.shell` rather than repeating
+     `mx-auto w-full max-w-6xl px-4`. */
+  --shell-pad: 1rem;
+  --shell-max: 72rem;
+
+  /* Vertical rhythm between sections. Fluid, so it never steps awkwardly at a
+     breakpoint boundary the way a fixed `py-14` → `sm:py-16` does. */
+  --section-pad: clamp(2.5rem, 6vw, 5.5rem);
+}
+
+/*
+ * Layout primitives.
+ *
+ * These exist so a newly added page or section inherits correct responsive
+ * behaviour by composing them, instead of every new file re-deriving the
+ * gutter, the max width and the vertical rhythm (and getting one of them
+ * subtly different).
+ */
+
+/* Page gutter + max content width. Use on the direct child of <main>/<section>
+   that constrains a row of content. */
+@utility shell {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--shell-max);
+  padding-inline: var(--shell-pad);
+
+  @media (min-width: 40rem) {
+    padding-inline: 1.5rem;
+  }
+
+  @media (min-width: 64rem) {
+    padding-inline: 2rem;
+  }
+}
+
+/* Vertical padding for a top-level content section. */
+@utility section-y {
+  padding-block: var(--section-pad);
+}
+
+/*
+ * Tap targets.
+ *
+ * WCAG 2.5.5 asks for 44x44 CSS px, and Tailwind's `min-h-11` / `size-11` are
+ * exactly that. The convention in this codebase is to set it explicitly at the
+ * call site rather than hide it in a utility, so there is no `tap` helper here
+ * on purpose — a class named `tap` would let a call site look compliant while
+ * the real measurement lives somewhere invisible.
+ */
+
+/* Safe-area aware bottom padding, for fixed bars pinned to the bottom of the
+   viewport on a device with a home indicator. `index.html` sets
+   `viewport-fit=cover`, so the insets are non-zero on iOS. */
+@utility pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@utility pb-safe-lg {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
 
 :root {
@@ -190,6 +279,37 @@
   text-transform: uppercase;
 }
 
+/*
+ * Press feedback.
+ *
+ * Tailwind compiles every `hover:` utility inside `@media (hover: hover)`, so on
+ * a touch device those styles are *absent* rather than merely unhelpful. A
+ * control whose only affordance is `hover:` — which is most of them in this
+ * codebase before this was added — therefore gives a finger no confirmation
+ * that the tap registered.
+ *
+ * `pressable` is the guaranteed channel: a plain `:active` opacity step that
+ * applies on touch, with mouse and reduced-motion, and needs no JS.
+ */
+@utility pressable {
+  @media (prefers-reduced-motion: no-preference) {
+    transition-property: opacity, filter;
+    transition-duration: 120ms;
+    transition-timing-function: ease-out;
+  }
+
+  &:active:not(:disabled):not([aria-disabled="true"]) {
+    opacity: 0.9;
+  }
+
+  &:disabled,
+  &[aria-disabled="true"] {
+    &:active {
+      opacity: 1;
+    }
+  }
+}
+
 /* Translucent material. Respects transparency/contrast preferences. */
 @utility material {
   background-color: color-mix(in oklab, var(--color-background) 72%, transparent);
@@ -218,6 +338,37 @@
   }
 }
 
+/*
+ * Hero Ken Burns.
+ *
+ * The hero photograph was previously animated with `motion`'s `initial/animate`
+ * scale. It is a CSS transform animation now for two reasons: it runs on the
+ * compositor instead of occupying the main thread for fourteen seconds, and the
+ * hero is the LCP element, so nothing on the critical path should be driving a
+ * JS animation.
+ *
+ * `transform` only, so it cannot trigger layout. The slow settle is the point —
+ * do not shorten it.
+ */
+@keyframes hero-drift {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@utility hero-drift {
+  animation: hero-drift 14s linear both;
+  will-change: transform;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    transform: none;
+  }
+}
+
 @keyframes review-scroll {
   from {
     transform: translateY(0);
@@ -227,6 +378,22 @@
   }
 }
 
+/*
+ * Review list.
+ *
+ * Pointer devices: an auto-scrolling marquee inside a fixed, `overflow-hidden`
+ * window, paused on hover or keyboard focus so a visitor can read a card.
+ *
+ * Touch devices: the window becomes a scroll area (see TrustSection) and the
+ * animation is switched off entirely — the same treatment `.instagram-track`
+ * already gets. Two reasons:
+ *
+ *  1. `:hover` never sticks on touch, so an animated track there can never be
+ *     paused. Content that moves under a finger with no way to stop it is worse
+ *     than content the visitor scrolls themselves.
+ *  2. The track is rendered twice to loop seamlessly. In a scroll area that
+ *     duplicate is unreachable dead weight, so it is hidden.
+ */
 .review-track {
   animation: review-scroll 18s linear infinite;
   will-change: transform;
@@ -240,6 +407,18 @@
 @media (prefers-reduced-motion: reduce) {
   .review-track {
     animation: none;
+  }
+}
+
+@media (hover: none) {
+  .review-track {
+    animation: none;
+    transform: none !important;
+  }
+
+  /* Drop the loop-seam duplicate that only exists for the animation. */
+  .review-track > [data-duplicate="true"] {
+    display: none;
   }
 }
 

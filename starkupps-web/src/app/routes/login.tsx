@@ -26,7 +26,7 @@ function Login() {
       <PageMeta title="Sign in" description="Sign in to StarKupps with your email and password." />
 
       <Header />
-      <main className="mx-auto w-full max-w-md px-4 py-10">
+      <main className="shell max-w-md py-10 sm:py-14">
         <Card className="rounded-3xl shadow-card">
           <CardHeader className="text-center">
             <p className="eyebrow text-primary">Welcome back</p>
@@ -45,7 +45,10 @@ function Login() {
             <EmailSignInForm />
             <p className="text-center text-sm text-muted-foreground">
               New to StarKupps?{" "}
-              <Link to="/signup" className="font-semibold text-primary hover:underline">
+              <Link
+                to="/signup"
+                className="pressable -mx-1 inline-flex min-h-11 items-center rounded-lg px-1 font-semibold text-primary hover:underline"
+              >
                 Create an account
               </Link>
             </p>

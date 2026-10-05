@@ -26,7 +26,7 @@ export function FaqSection() {
   const list = faqs ?? [];
 
   return (
-    <section aria-labelledby="faq-heading" className="bg-background py-14 sm:py-16">
+    <section aria-labelledby="faq-heading" className="section-y bg-background">
       <div className="mx-auto w-full max-w-6xl px-4">
         <header className="max-w-2xl">
           <p className="eyebrow text-primary">Help &amp; info</p>
@@ -135,7 +135,7 @@ export function FaqSection() {
               Still need a hand?{" "}
               <a
                 href="#visit"
-                className="font-semibold text-primary underline decoration-primary/30 underline-offset-4 transition-colors hover:decoration-primary"
+                className="-my-1 rounded-sm px-1 py-1 font-semibold text-primary underline decoration-primary/30 underline-offset-4 transition-colors hover:decoration-primary active:opacity-70"
               >
                 Get in touch
               </a>

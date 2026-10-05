@@ -63,7 +63,7 @@ export function SettingsTab({ user }: { user: User }) {
             variant="outline"
             size="sm"
             onClick={() => setEditing(true)}
-            className="h-9 gap-1.5 rounded-xl"
+            className="min-h-11 gap-1.5 rounded-xl"
           >
             <Pencil className="size-3.5" />
             Edit
@@ -131,7 +131,7 @@ export function SettingsTab({ user }: { user: User }) {
       </Button>
 
       <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent className="rounded-3xl sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="font-display text-xl">Edit display name</DialogTitle>
             <DialogDescription>This is the name printed on your order slips.</DialogDescription>

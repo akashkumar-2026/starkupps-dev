@@ -52,7 +52,7 @@ function AuthCallback() {
     <>
       <PageMeta title="Signing you in" noIndex />
 
-      <main className="grid min-h-screen place-items-center px-4">
+      <main className="grid min-h-[100svh] place-items-center px-4">
         <div className="text-center">
           {error ? (
             <>
@@ -60,7 +60,7 @@ function AuthCallback() {
               <p className="mt-2 text-sm text-muted-foreground">{error}</p>
               <a
                 href="/login"
-                className="mt-6 inline-block rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground"
+                className="pressable mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 text-base font-semibold text-primary-foreground"
               >
                 Back to sign in
               </a>
