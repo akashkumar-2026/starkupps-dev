@@ -4,6 +4,22 @@ Running log of every SEO change: what, why, evidence, rollback. Latest first.
 
 ---
 
+## 2026-10-10 — CI guardrails + risk register (this commit)
+
+- `scripts/assert-seo.mjs` (postbuild last): one title/H1, canonical-vs-path
+  match, no stray noindex, JSON-LD present, img alt, anchor, sitemap/robots
+  checks. Negative-tested against broken builds (missing H1/canonical,
+  off-origin sitemap all fail); offline builds warn-and-pass by design.
+- `PageMeta` auto-noindex off the canonical host (staging/preview safety,
+  loopback exempt for lab). Caught live by LHCI itself (SEO 0.66 on localhost
+  → fixed → 100).
+- `lighthouserc.cjs` + `.github/workflows/seo.yml` (web verify, admin
+  test/typecheck, LHCI on 5 URLs). Proven green locally end-to-end.
+- CLS hunt closed: menu-page footer travel fixed via reserved intro footprint
+  (slug-derived H1 + skeleton) and section min-height — CLS 0.22→0 on menu
+  pages, including with a failing API. Menu-page lab CLS now ≤0.036.
+- `docs/seo/risk-register.md`: regressions, assumptions, UNVERIFIED list.
+
 ## 2026-10-10 — Perf/a11y pass + menu Outlet fix (commit `9281bdf`)
 
 **Routing fix:** `/menu/*` rendered the hub (missing Outlet parent) — category canonicals

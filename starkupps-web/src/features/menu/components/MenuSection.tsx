@@ -138,7 +138,11 @@ export function MenuSection({
   };
 
   return (
-    <section id="menu" className="mx-auto w-full max-w-6xl scroll-mt-16 px-4 py-14">
+    // min-h pins the footer across loading/error/content swaps: without it a
+    // failed load collapses this region and the footer travels ~700px (CLS).
+    // Tall content exceeds the minimum naturally, so this only ever affects
+    // short states.
+    <section id="menu" className="mx-auto min-h-[80svh] w-full max-w-6xl scroll-mt-16 px-4 py-14">
       <p className="eyebrow text-primary">Order</p>
       {site?.menuHeading && <h2 className="display-lg mt-2">{site.menuHeading}</h2>}
 

@@ -31,17 +31,17 @@
  * `lastmod` is the route file's mtime (date precision). Once the prerender
  * step (Phase 1c) exists, this upgrades to the content `updatedAt`.
  *
- * Usage: `node scripts/generate-sitemap.mjs [--out dist/sitemap.xml]`
+ * Usage: `node scripts/generate-sitemap.mjs [out-file]` (positional — this
+ * Node build rejects `--flags` passed to scripts).
  */
 import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const routesDir = join(root, "src/app/routes");
 
-const outFlag = process.argv.find((a) => a.startsWith("--out="));
-const outFile = outFlag ? outFlag.slice("--out=".length) : join(root, "dist/sitemap.xml");
+const outFile = process.argv[2] ? resolve(process.argv[2]) : join(root, "dist/sitemap.xml");
 
 // Single source of truth lives in src/config/site.ts — never duplicate it here.
 const siteConfig = readFileSync(join(root, "src/config/site.ts"), "utf8");

@@ -40,6 +40,12 @@ function CategoryPage() {
   const items = (menu.data?.items ?? []).filter((it) => slugify(it.categoryName) === slug);
   const summary = summarizeCategory(items);
   const siblings = categories.filter((c) => slugify(c.name) !== slug);
+  // Human-readable interim title from the slug ("cold-coffee" → "Cold coffee")
+  // so the H1 slot keeps its height while data loads — replaced on resolve.
+  const interimName = slug
+    .split("-")
+    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(" ");
 
   return (
     <>
@@ -59,14 +65,14 @@ function CategoryPage() {
           items={[
             { label: "Home", to: "/" },
             { label: "Menu", to: "/menu" },
-            { label: category?.name ?? "…" },
+            { label: category?.name ?? interimName },
           ]}
         />
         <p className="eyebrow mt-4 text-primary">Menu · Munger</p>
         <h1 className="display-lg mt-3">
-          {category ? `${category.name} at StarKupps.` : "Loading the menu…"}
+          {category ? `${category.name} at StarKupps.` : `${interimName} at StarKupps.`}
         </h1>
-        {category && (
+        {category ? (
           <p className="mt-4 max-w-2xl text-base text-muted-foreground">
             {category.description ? `${category.description} ` : ""}
             {summary.count > 0 &&
@@ -83,6 +89,14 @@ function CategoryPage() {
             </Link>
             .
           </p>
+        ) : (
+          // Same footprint as the intro paragraph: swapping text for text
+          // (not absence for text) keeps everything below it pinned (CLS).
+          <div aria-hidden="true" className="mt-4 max-w-2xl space-y-2">
+            <div className="h-4 animate-pulse rounded-full bg-muted" />
+            <div className="h-4 w-11/12 animate-pulse rounded-full bg-muted" />
+            <div className="h-4 w-2/3 animate-pulse rounded-full bg-muted" />
+          </div>
         )}
       </main>
 

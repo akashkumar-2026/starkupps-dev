@@ -1,0 +1,69 @@
+# SEO guardrails — runs the full verification chain on every push/PR.
+#
+# Web: lint → typecheck → tests → production build. The build itself runs the
+# postbuild SEO pipeline (prerender → JSON-LD validation → sitemap →
+# assert-seo), so a red SEO assertion fails this job. Builds run WITHOUT the
+# gateway (offline path: shell + warnings) unless VITE_API_URL is configured
+# as an Actions secret — either way the assertions must pass.
+# Admin: lockfile-synced install + full test suite (covers the rebuild-hook
+# allowlist). Lighthouse runs against the previewed production build.
+name: seo-guardrails
+
+on:
+  push:
+    branches: [main, "seo/**"]
+  pull_request:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starkupps-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+          cache: npm
+          cache-dependency-path: starkupps-web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run verify
+        env:
+          # Data-ful build when the secret exists; offline (warn-only) otherwise.
+          VITE_API_URL: ${{ secrets.PREVIEW_API_URL }}
+
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starkupps-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+          cache: npm
+          cache-dependency-path: starkupps-admin/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+
+  lighthouse:
+    runs-on: ubuntu-latest
+    needs: [web]
+    defaults:
+      run:
+        working-directory: starkupps-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+          cache: npm
+          cache-dependency-path: starkupps-web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.PREVIEW_API_URL }}
+      - run: npx -y @lhci/cli@0.14.0 autorun

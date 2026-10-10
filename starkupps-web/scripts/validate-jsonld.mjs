@@ -18,15 +18,15 @@
  *   must appear in the page's visible text (tags stripped, entities decoded);
  * - placeholder values: empty strings, "TODO", "lorem", "example.com".
  *
- * Usage: `node scripts/validate-jsonld.mjs [--dir dist]`
+ * Usage: `node scripts/validate-jsonld.mjs [dist-dir]` (positional — this
+ * Node build rejects `--flags` passed to scripts).
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const dirFlag = process.argv.find((a) => a.startsWith("--dir="));
-const dir = dirFlag ? dirFlag.slice("--dir=".length) : join(root, "dist");
+const dir = process.argv[2] ? resolve(process.argv[2]) : join(root, "dist");
 
 const errors = [];
 
