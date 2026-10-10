@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc --noEmit",
-    "postbuild": "node scripts/generate-sitemap.mjs",
+    "postbuild": "node scripts/prerender.mjs && node scripts/generate-sitemap.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
