@@ -40,9 +40,13 @@
  * `dist/<KEY>.txt` (key-location proof) and submits changed canonical URLs
  * to api.indexnow.org. Fail-open: submission errors only warn.
  *
- * JSON-LD is NOT emitted here — Phase 2 extends this script with schema
- * generated from the same fetched payloads, so markup and content cannot
- * drift apart.
+ * JSON-LD (Phase 2) is emitted here too, from the same fetched payloads —
+ * Organization, WebSite, CafeOrCoffeeShop, Menu and FAQPage/BreadcrumbList —
+ * so markup and visible content cannot drift. `scripts/validate-jsonld.mjs`
+ * (next postbuild step) parses every block and fails the build on invalid
+ * JSON, duplicate @id, missing required props, schema-vs-visible mismatches,
+ * or placeholder values. Deliberately omitted fields are listed in the
+ * JSON-LD section below with reasons.
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
@@ -118,8 +122,182 @@ function telHref(digits) {
   return digits && digits.trim() ? `tel:+${digits.trim()}` : null;
 }
 
+/** Mirror of src/config/site.ts phoneDisplay: `918252433504` → `+91 82524 33504`. */
+function phoneDisplay(digits) {
+  const d = (digits ?? "").trim();
+  if (/^91\d{10}$/.test(d)) return `+91 ${d.slice(2, 4)} ${d.slice(4, 8)} ${d.slice(8)}`;
+  if (/^\d{10}$/.test(d)) return `+91 ${d.slice(0, 5)} ${d.slice(5)}`;
+  return d ? `+${d}` : "";
+}
+
+// --- JSON-LD (Phase 2) --------------------------------------------------------
+// One canonical entity per real-world fact, generated from the SAME gateway
+// payloads as the visible markup above, so schema and content cannot drift.
+// Stable @id URIs connect nodes across pages ({ORIGIN}/#organization …).
+//
+// Deliberately OMITTED (schema honesty — never guess):
+// - openingHoursSpecification: weeklyHours (12:00–23:00) contradicts the visible
+//   hoursSummary (10 AM–11 PM). Owner must pick the truth (owner-actions #5).
+// - geo / precise hasMap pin: latitude/longitude are null in site_settings.
+// - aggregateRating/Review: live reviews endpoint is empty AND the "4.8 · 1,240
+//   reviews" stat strip is an unverified owner claim — markup would be fake.
+// - email/contactPoint, foundingDate/founder, priceRange, acceptsReservations,
+//   paymentAccepted, amenityFeature: not in verified data. Add only with proof.
+// - WebSite SearchAction: no on-site search exists.
+
+/** Split "Street…, Munger, Bihar" into PostalAddress parts; falls back honestly. */
+function postalAddress(raw) {
+  const text = (raw ?? "").trim();
+  const mungerTail = /^(.*),\s*Munger,\s*Bihar\s*$/i.exec(text);
+  if (mungerTail && mungerTail[1].trim()) {
+    return {
+      "@type": "PostalAddress",
+      streetAddress: mungerTail[1].trim(),
+      addressLocality: "Munger",
+      addressRegion: "Bihar",
+      addressCountry: "IN",
+    };
+  }
+  return { "@type": "PostalAddress", streetAddress: text, addressCountry: "IN" };
+}
+
+function availabilityOf(item, variant) {
+  return item.available !== false && variant.available !== false
+    ? "https://schema.org/InStock"
+    : "https://schema.org/OutOfStock";
+}
+
+function menuNode(menu) {
+  const cats = (menu.categories ?? []).filter((c) => !c.comingSoon);
+  const itemsByCat = new Map();
+  for (const item of menu.items ?? []) {
+    if (item.effectiveComingSoon) continue;
+    if (!itemsByCat.has(item.categoryName)) itemsByCat.set(item.categoryName, []);
+    itemsByCat.get(item.categoryName).push(item);
+  }
+  const sections = [];
+  for (const c of cats) {
+    const items = itemsByCat.get(c.name) ?? [];
+    if (!items.length) continue;
+    sections.push({
+      "@type": "MenuSection",
+      name: c.name,
+      ...(c.description ? { description: c.description } : {}),
+      hasMenuItem: items.map((i) => ({
+        "@type": "MenuItem",
+        name: i.name,
+        ...(i.description ? { description: i.description } : {}),
+        ...(i.imageUrl ? { image: i.imageUrl } : {}),
+        ...(i.veg === true ? { suitableForDiet: "https://schema.org/VegetarianDiet" } : {}),
+        offers: (i.variants ?? [])
+          .filter((v) => typeof (v.effectivePrice ?? v.price) === "number")
+          .map((v) => ({
+            "@type": "Offer",
+            ...(v.quantity ? { name: `${v.quantity}${v.unit ? ` ${v.unit}` : ""}` } : {}),
+            priceCurrency: "INR",
+            price: v.effectivePrice ?? v.price,
+            availability: availabilityOf(i, v),
+          })),
+      })),
+    });
+  }
+  return {
+    "@type": "Menu",
+    "@id": `${ORIGIN}/#menu`,
+    name: `${BRAND} menu`,
+    hasMenuSection: sections,
+  };
+}
+
+function baseNodes(site, ogImage) {
+  const digits = (site.phoneDigits ?? "").trim();
+  const mapsQuery = site.mapsQuery?.trim() || site.address?.trim();
+  const organization = {
+    "@type": "Organization",
+    "@id": `${ORIGIN}/#organization`,
+    name: site.brandName?.trim() || BRAND,
+    url: `${ORIGIN}/`,
+    ...(ogImage ? { logo: ogImage } : {}),
+    ...(site.tagline ? { description: `${site.tagline} in Munger, Bihar` } : {}),
+    knowsAbout: [
+      "cold coffee",
+      "mocktails",
+      "pizza",
+      "burgers",
+      "sandwiches",
+      "shakes",
+      "cafe in Munger",
+    ],
+    // sameAs: ONLY profiles verified live on 2026-10-10. snapchat.com/starkupps
+    // → 404 and facebook.com/page/starkupps → 404 are EXCLUDED until the owner
+    // supplies real URLs (owner-actions #6).
+    sameAs: ["https://instagram.com/starkupps", "https://x.com/starkupps"],
+  };
+  const website = {
+    "@type": "WebSite",
+    "@id": `${ORIGIN}/#website`,
+    url: `${ORIGIN}/`,
+    name: site.brandName?.trim() || BRAND,
+    publisher: { "@id": `${ORIGIN}/#organization` },
+    inLanguage: "en",
+  };
+  // CafeOrCoffeeShop: the most specific accurate type — a cafe serving coffee
+  // PLUS pizza/burgers/sandwiches (Restaurant alone would understate coffee;
+  // FoodEstablishment is less specific).
+  const cafe = {
+    "@type": "CafeOrCoffeeShop",
+    "@id": `${ORIGIN}/#cafe`,
+    name: site.brandName?.trim() || BRAND,
+    url: `${ORIGIN}/`,
+    ...(ogImage ? { image: ogImage } : {}),
+    ...(site.address ? { address: postalAddress(site.address) } : {}),
+    ...(digits ? { telephone: `+${digits}` } : {}),
+    servesCuisine: ["Coffee", "Pizza", "Burgers", "Sandwiches", "Mocktails", "Shakes"],
+    hasMenu: { "@id": `${ORIGIN}/#menu` },
+    ...(mapsQuery ? { hasMap: `https://maps.google.com/?q=${encodeURIComponent(mapsQuery)}` } : {}),
+  };
+  return { organization, website, cafe };
+}
+
+function homeGraph(site, menu, faqs, ogImage) {
+  const { organization, website, cafe } = baseNodes(site, ogImage);
+  const graph = [organization, website, cafe, menuNode(menu)];
+  if ((faqs ?? []).length) {
+    graph.push({
+      "@type": "FAQPage",
+      "@id": `${ORIGIN}/#faq`,
+      mainEntity: faqs.map((f) => ({
+        "@type": "Question",
+        name: f.question,
+        acceptedAnswer: { "@type": "Answer", text: f.answer },
+      })),
+    });
+  }
+  return { "@context": "https://schema.org", "@graph": graph };
+}
+
+function aboutGraph(site, ogImage) {
+  const { organization, website, cafe } = baseNodes(site, ogImage);
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      organization,
+      website,
+      cafe,
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${ORIGIN}/about#breadcrumbs`,
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${ORIGIN}/` },
+          { "@type": "ListItem", position: 2, name: "About", item: `${ORIGIN}/about` },
+        ],
+      },
+    ],
+  };
+}
+
 // --- head -------------------------------------------------------------------
-function buildHead({ path, title, description, ogDescription }) {
+function buildHead({ path, title, description, ogDescription, jsonLd }) {
   const canonical = `${ORIGIN}${path}`;
   const ogImage = resolveOgImage();
   let head = shell;
@@ -145,6 +323,7 @@ function buildHead({ path, title, description, ogDescription }) {
     ogImage
       ? `<meta property="og:image" content="${ogImage}" />\n    <meta property="og:image:alt" content="${esc(`${BRAND} cafe`)}" />\n    <meta name="twitter:image" content="${ogImage}" />`
       : null,
+    jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>` : null,
   ]
     .filter(Boolean)
     .join("\n    ");
@@ -187,7 +366,7 @@ function buildHomeBody(site, menu, faqs) {
   return `<header><nav aria-label="Primary"><a href="${ORIGIN}/">${esc(site.brandName || BRAND)}</a> <a href="${ORIGIN}/about">About</a></nav></header>
 <main>
 <section><p>${esc(site.heroBadge || "")}</p><h1>${esc(site.heroHeading || site.tagline || BRAND)}</h1><p>${esc(site.heroSubheading || "")}</p></section>
-<section aria-label="Menu"><h2>${esc(site.menuHeading || "Menu")}</h2>
+<section aria-label="Menu" id="menu"><h2>${esc(site.menuHeading || "Menu")}</h2>
 <nav aria-label="Menu categories"><ul>${cats.map((c) => `<li>${esc(c.name)}</li>`).join("")}</ul></nav>
 ${menuSections}</section>
 <section aria-label="Why trust us"><h2>${esc(site.trustHeading || "")}</h2><ul>${[
@@ -226,7 +405,7 @@ function buildAboutBody(site) {
 <section aria-label="Licences and hygiene"><h2>Licences &amp; hygiene</h2>
 <dl>${site.fssaiLicense ? `<div><dt>FSSAI licence</dt><dd>${esc(site.fssaiLicense)}</dd></div>` : ""}${site.trustClaim3 ? `<div><dt>Kitchen hygiene audit</dt><dd>${esc(site.trustClaim3)}</dd></div>` : ""}${hours ? `<div><dt>Hours</dt><dd>${esc(hours)}${site.hoursNote ? `, ${esc(site.hoursNote.toLowerCase())}` : ""}</dd></div>` : ""}</dl></section>
 <p><address>${esc(site.address || "")}</address></p>
-<p>${directions ? `<a href="${esc(directions)}">Get directions in Google Maps</a>` : ""} ${tel ? `<a href="${tel}">Call us</a>` : ""}</p>
+<p>${directions ? `<a href="${esc(directions)}">Get directions in Google Maps</a>` : ""} ${tel ? `<a href="${tel}">Call ${esc(phoneDisplay(site.phoneDigits))}</a>` : ""}</p>
 </main>
 <footer><p>${esc(site.brandName || BRAND)} — ${esc(site.tagline || "")}</p><nav aria-label="Footer"><a href="${ORIGIN}/">Home</a> <a href="${ORIGIN}/about">About</a></nav></footer>`;
 }
@@ -297,13 +476,24 @@ const aboutMeta = {
   ogDescription: "A founder's note, a look inside the kitchen, and directions to the café.",
 };
 
+const ogImage = resolveOgImage();
 writeFileSync(
   shellPath,
-  inject(shell, buildHead(homeMeta), buildHomeBody(site, menu, faqs), "home"),
+  inject(
+    shell,
+    buildHead({ ...homeMeta, jsonLd: homeGraph(site, menu, faqs, ogImage) }),
+    buildHomeBody(site, menu, faqs),
+    "home",
+  ),
 );
 writeFileSync(
   join(distDir, "about.html"),
-  inject(shell, buildHead(aboutMeta), buildAboutBody(site), "about"),
+  inject(
+    shell,
+    buildHead({ ...aboutMeta, jsonLd: aboutGraph(site, ogImage) }),
+    buildAboutBody(site),
+    "about",
+  ),
 );
 
 const itemCount = (menu.items ?? []).length;

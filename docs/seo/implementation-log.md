@@ -4,6 +4,34 @@ Running log of every SEO change: what, why, evidence, rollback. Latest first.
 
 ---
 
+## 2026-10-10 — Freshness hook, admin side (commit `54e9164`)
+
+**What:** `starkupps-admin/server/lib/seo-rebuild.ts` + one middleware on
+`protectedProcedure` (`server/lib/trpc.ts`) + `SEO_REBUILD_HOOK_URL` env
+(`server/config/env.ts`, `.env.example`) + 22 unit tests.
+
+**Why:** prerendered HTML is only as fresh as the last build. After any
+storefront-visible mutation the gateway now POSTs the Vercel Deploy Hook
+(debounced 60 s trailing-edge, fail-open, no-op when unset).
+
+**Trade-offs:** middleware allowlist at the single `protectedProcedure` choke point
+instead of ~37 individual call sites (auditable, covers future mutations in the same
+routers; a NEW storefront-visible router must add its prefix + test row). Order,
+inventory, auth, zones, content-blocks writes never match. Hook failures only warn.
+
+**Verified:** eslint + `tsc --noEmit` clean; new suite 22/22; **full admin suite
+369/369 green (27 files)**. Owner still must: create the Deploy Hook in Vercel, set
+`SEO_REBUILD_HOOK_URL` in Cloud Run env, add nightly rebuild.
+
+**Rollback:** `git revert 54e9164`.
+
+## 2026-10-10 — Pre-existing break found: admin `npm ci` (commit `92f1efd`)
+
+`starkupps-admin/package-lock.json` was missing `@testing-library/*` entries, so
+`npm ci` (and therefore `Dockerfile:10` production builds) failed on a fresh checkout
+(`EUSAGE ... not in sync`). Regenerated via `npm install` — lockfile only, no
+dependency changes. Needed to verify the admin-side hook; also un-breaks admin deploys.
+
 ## 2026-10-10 — Phase 1c: build-time prerender (commit `2be61f7`)
 
 **What:** `starkupps-web/scripts/prerender.mjs` (stdlib-only), wired as first half of
