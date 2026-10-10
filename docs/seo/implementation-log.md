@@ -4,6 +4,24 @@ Running log of every SEO change: what, why, evidence, rollback. Latest first.
 
 ---
 
+## 2026-10-10 — Phase 3: page set + hub linking (commits `639c5b3`, `3c6dd78`)
+
+**What:** `/menu` hub, `/menu/$slug` ×6, `/contact`, `/faq` (+Breadcrumbs,
+category-summary, footer nav, header Contact, FaqSection contactHref). Prerender
+emits all 11 pages; sitemap merges the dynamic-slug manifest (11 URLs); validator
+recursive; FAQPage schema consolidated on `/faq`.
+
+**Why:** crawlable topical hubs (menu ↔ categories ↔ contact/FAQ), answer-first
+intros from live data, question-H2 contact page for AI-assistant queries.
+
+**Verified:** web `verify` green; validator green on all pages; ClaudeBot UA → 200
++ H1 on /menu (43 KB full menu), /contact, /faq, /menu/pizza, /menu/cold-coffee;
+unknown slugs → noindex 404 screen. Rollback: revert both SHAs.
+
+**Still planned (not started):** perf rework (self-host/subset fonts, AVIF, real
+Lighthouse run — no Chrome in this env), analytics events (needs owner provider
+choice), full CI guardrails beyond JSON-LD, `llms.txt` (deferred last by design).
+
 ## 2026-10-10 — Phase 4 + owner docs (commits `27e97c0`, docs batch)
 
 - `robots.txt`: explicit Allow for OAI-SearchBot/ChatGPT-User/Claude-SearchBot/
