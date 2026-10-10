@@ -5,8 +5,7 @@ import { NotFound } from "@/app/route-errors";
 import { Breadcrumbs } from "@/components/shared/Breadcrumbs";
 import { Header } from "@/components/layout/Header";
 import { SiteFooter } from "@/components/layout/SiteFooter";
-import { CartSheet } from "@/features/cart/components/CartSheet";
-import { StickyCartBar } from "@/features/cart/components/StickyCartBar";
+import { LazyCartUi } from "@/features/cart/components/LazyCartUi";
 import { summarizeCategory } from "@/features/menu/category-summary";
 import { MenuSection } from "@/features/menu/components/MenuSection";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
@@ -112,8 +111,7 @@ function CategoryPage() {
       )}
 
       <SiteFooter />
-      <StickyCartBar />
-      <CartSheet />
+      <LazyCartUi />
     </>
   );
 }

@@ -94,6 +94,28 @@ async function fetchJson(path) {
   return res.json();
 }
 
+/** LCP preload for the home hero (bundled photo, eager + fetchpriority=high in React). */
+function heroPreloadLink() {
+  try {
+    const assets = readdirSync(join(distDir, "assets"));
+    const set = assets
+      .filter((f) => /^hero-coffee-\d+-.*\.avif$/.test(f))
+      .map((f) => {
+        const w = Number(/^hero-coffee-(\d+)-/.exec(f)[1]);
+        // Origin-relative on purpose: resolves to the canonical host in
+        // production AND matches locally, so the preload is never wasted.
+        // (og:image stays absolute — scrapers require it.)
+        return { w, href: `/assets/${f}` };
+      })
+      .sort((a, b) => a.w - b.w);
+    if (!set.length) return null;
+    const srcset = set.map((s) => `${s.href} ${s.w}w`).join(", ");
+    return `<link rel="preload" as="image" imagesrcset="${srcset}" imagesizes="100vw" type="image/avif" fetchpriority="high" />`;
+  } catch {
+    return null;
+  }
+}
+
 /** Absolute canonical og:image: built hero photo, else largest bundled photo, else null. */
 function resolveOgImage() {
   try {
@@ -481,6 +503,8 @@ function buildHead({ path, title, description, ogDescription, jsonLd }) {
     ogImage
       ? `<meta property="og:image" content="${ogImage}" />\n    <meta property="og:image:alt" content="${esc(`${BRAND} cafe`)}" />\n    <meta name="twitter:image" content="${ogImage}" />`
       : null,
+    // LCP hint for the home hero only — other pages preload nothing.
+    path === "/" ? heroPreloadLink() : null,
     jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>` : null,
   ]
     .filter(Boolean)

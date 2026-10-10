@@ -1,7 +1,4 @@
-import { motion, useReducedMotion } from "motion/react";
-
 import { resolveResponsive, toSrcset } from "@/lib/responsive-images";
-import { springs } from "@/utils/motion";
 
 /**
  * An image that serves a downscaled rendition per device.
@@ -53,11 +50,6 @@ type ResponsiveImageProps = {
   /** Drives the LCP request priority for the hero. */
   fetchPriority?: "high" | "low" | "auto" | undefined;
   decoding?: "sync" | "async" | "auto" | undefined;
-  /**
-   * Fade/scale in on mount. Off for above-the-fold images, where an entrance
-   * animation delays the LCP paint for no benefit.
-   */
-  animate?: boolean;
 };
 
 export function ResponsiveImage({
@@ -71,9 +63,7 @@ export function ResponsiveImage({
   loading = "lazy",
   fetchPriority,
   decoding,
-  animate = false,
 }: ResponsiveImageProps) {
-  const reducedMotion = useReducedMotion();
   const resolved = stem ? resolveResponsive(stem) : undefined;
 
   const shared = {
@@ -88,14 +78,18 @@ export function ResponsiveImage({
     ...(resolved && sizes ? { srcSet: toSrcset(resolved.variants), sizes } : {}),
   };
 
-  if (!animate) return <img {...shared} />;
-
-  return (
-    <motion.img
-      {...shared}
-      initial={reducedMotion ? {} : { opacity: 0, scale: 0.97 }}
-      animate={reducedMotion ? {} : { opacity: 1, scale: 1 }}
-      transition={springs.section}
-    />
-  );
+  // No entrance animation, by design: it delayed LCP for no benefit, and the
+  // `motion` import it required kept a 130 KB library on the critical path.
+  // Boxes are reserved via width/height, so images never shift layout (CLS).
+  if (resolved && resolved.avifVariants.length > 0 && sizes) {
+    return (
+      // `contents`: the wrapper must not participate in layout — the img
+      // keeps its own classes and behaves as the direct child.
+      <picture className="contents">
+        <source type="image/avif" srcSet={toSrcset(resolved.avifVariants)} sizes={sizes} />
+        <img {...shared} />
+      </picture>
+    );
+  }
+  return <img {...shared} />;
 }

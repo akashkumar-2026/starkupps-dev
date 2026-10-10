@@ -4,7 +4,7 @@ import { MapPin } from "lucide-react";
 import { PageMeta } from "@/app/PageMeta";
 import { Header } from "@/components/layout/Header";
 import { ResponsiveImage } from "@/components/shared/ResponsiveImage";
-import { CartSheet } from "@/features/cart/components/CartSheet";
+import { LazyCartUi } from "@/features/cart/components/LazyCartUi";
 import { siteLinks } from "@/config/site";
 import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
 import spaceImg from "@/assets/space.jpg";
@@ -134,7 +134,7 @@ function About() {
         )}
       </main>
 
-      <CartSheet />
+      <LazyCartUi bar={false} />
     </>
   );
 }

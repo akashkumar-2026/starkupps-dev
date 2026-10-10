@@ -5,15 +5,14 @@ import { PageMeta } from "@/app/PageMeta";
 import { Breadcrumbs } from "@/components/shared/Breadcrumbs";
 import { Header } from "@/components/layout/Header";
 import { SiteFooter } from "@/components/layout/SiteFooter";
-import { CartSheet } from "@/features/cart/components/CartSheet";
-import { StickyCartBar } from "@/features/cart/components/StickyCartBar";
+import { LazyCartUi } from "@/features/cart/components/LazyCartUi";
 import { CategoryImage } from "@/features/menu/category-images";
 import { MenuSection } from "@/features/menu/components/MenuSection";
 import { summarizeCategory } from "@/features/menu/category-summary";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
 import { slugify } from "@/utils/format";
 
-export const Route = createFileRoute("/menu")({
+export const Route = createFileRoute("/menu/")({
   component: MenuPage,
 });
 
@@ -91,8 +90,7 @@ function MenuPage() {
       <MenuSection category={category} onCategoryChange={setCategory} />
 
       <SiteFooter />
-      <StickyCartBar />
-      <CartSheet />
+      <LazyCartUi />
     </>
   );
 }

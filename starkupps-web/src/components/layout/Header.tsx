@@ -1,13 +1,18 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { AnimatePresence, motion } from "motion/react";
 import { ShoppingBag, UserRound } from "lucide-react";
 import { Pressable } from "@/components/shared/Pressable";
-import { AuthDialog } from "@/features/auth/components/AuthDialog";
 import { useCart } from "@/state";
 import { useAuth } from "@/state";
 import { inr } from "@/utils/format";
-import { springs } from "@/utils/motion";
+
+/**
+ * Sign-in dialog (forms + validation) loads on first open, not with the
+ * header — same deferral rationale as LazyCartUi.
+ */
+const AuthDialog = lazy(() =>
+  import("@/features/auth/components/AuthDialog").then((m) => ({ default: m.AuthDialog })),
+);
 
 /**
  * Site header.
@@ -75,33 +80,26 @@ export function Header() {
             className="relative flex min-h-11 items-center gap-2 rounded-full border border-border bg-card px-3 sm:ml-1"
           >
             <ShoppingBag className="size-5" />
-            <AnimatePresence initial={false}>
-              {count > 0 && (
-                <motion.span
-                  key="total"
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: "auto", opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={springs.sheet}
-                  className="hidden overflow-hidden whitespace-nowrap text-sm font-semibold tabular-nums md:block"
-                >
-                  {count} · {inr(subtotal)}
-                </motion.span>
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {count > 0 && (
-                <motion.span
-                  key={count}
-                  initial={{ scale: 0.4 }}
-                  animate={{ scale: 1 }}
-                  transition={springs.sheet}
-                  className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground md:hidden"
-                >
-                  {count}
-                </motion.span>
-              )}
-            </AnimatePresence>
+            {/* Mount animations are pure CSS (`badge-in` in styles.css): the
+                badge remounts on every count change (key), replaying the pop
+                without an animation library. Exit animation dropped — a
+                disappearing badge needs no choreography. */}
+            {count > 0 && (
+              <span
+                key="total"
+                className="badge-in hidden overflow-hidden whitespace-nowrap text-sm font-semibold tabular-nums md:block"
+              >
+                {count} · {inr(subtotal)}
+              </span>
+            )}
+            {count > 0 && (
+              <span
+                key={count}
+                className="badge-in absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground md:hidden"
+              >
+                {count}
+              </span>
+            )}
           </Pressable>
           {user ? (
             <Link
@@ -124,7 +122,11 @@ export function Header() {
           )}
         </nav>
       </div>
-      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
+      {authOpen && (
+        <Suspense fallback={null}>
+          <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
+        </Suspense>
+      )}
     </header>
   );
 }

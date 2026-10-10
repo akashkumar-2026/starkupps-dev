@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { Plus } from "lucide-react";
 import { FetchErrorState } from "@/components/shared/FetchErrorState";
 import { Pressable } from "@/components/shared/Pressable";
-import { ItemSheet } from "@/features/cart/components/ItemSheet";
 import { useSiteSettings } from "@/features/content/useSiteContent";
 import { inr, slugify } from "@/utils/format";
 import { springs } from "@/utils/motion";
@@ -11,6 +10,16 @@ import { cn } from "@/utils/cn";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
 import type { DisplayCategory, DisplayMenuItem } from "@/types/menu";
 import { CategoryImage } from "@/features/menu/category-images";
+
+/**
+ * ItemSheet (add-to-cart flow) loads on first item tap, not with the menu.
+ * It is the heaviest interaction on this page and nobody needs it before
+ * tapping — gating on `active` keeps it (and its cart/form deps) out of the
+ * initial bundle without changing the flow.
+ */
+const ItemSheet = lazy(() =>
+  import("@/features/cart/components/ItemSheet").then((m) => ({ default: m.ItemSheet })),
+);
 
 export function MenuSection({
   category,
@@ -355,7 +364,11 @@ export function MenuSection({
         </motion.ul>
       )}
 
-      <ItemSheet item={active} origin={origin} onClose={() => setActive(null)} />
+      {active && (
+        <Suspense fallback={null}>
+          <ItemSheet item={active} origin={origin} onClose={() => setActive(null)} />
+        </Suspense>
+      )}
     </section>
   );
 }
