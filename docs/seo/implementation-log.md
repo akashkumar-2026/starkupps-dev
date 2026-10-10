@@ -4,6 +4,24 @@ Running log of every SEO change: what, why, evidence, rollback. Latest first.
 
 ---
 
+## 2026-10-10 — Phase 4 + owner docs (commits `27e97c0`, docs batch)
+
+- `robots.txt`: explicit Allow for OAI-SearchBot/ChatGPT-User/Claude-SearchBot/
+  Claude-User/PerplexityBot(+User); training crawlers default ALLOW with a
+  documented one-line flip (owner decision recorded: allow); defensive Disallow
+  for `/api/`, `/auth/`, preview/debug params; staging-noindex as owner hosting
+  action. No repo layer blocks search/citation bots (verified: no CDN/WAF/bot
+  rules in `vercel.json` or code; all 7 bot UAs got 200 pre-change).
+- `docs/seo/owner-actions.md` (P0–P3 ordered checklist + curl verification),
+  `social-seo-playbook.md` (identity block, per-platform, calendar, checklist),
+  `ai-visibility-tracking.md` (30-prompt set, log table, targets; baseline 0%).
+- Deferred honestly: `llms.txt` (no measured benefit; revisit last), Hindi pages
+  (single `en` + natural Hinglish until GSC data), `/menu` + category + contact
+  pages (Phase 3 build), perf rework + real Lighthouse run (no Chrome in this
+  env), analytics events + full CI guardrails beyond JSON-LD (Phase 7).
+
+## 2026-10-10 — Phase 2: JSON-LD + validator + entity sheet (commit `eb1e131`)
+
 ## 2026-10-10 — Freshness hook, admin side (commit `54e9164`)
 
 **What:** `starkupps-admin/server/lib/seo-rebuild.ts` + one middleware on
