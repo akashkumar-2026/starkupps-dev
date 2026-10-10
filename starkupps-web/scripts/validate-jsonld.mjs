@@ -58,7 +58,16 @@ function walk(node, fn) {
   }
 }
 
-const files = readdirSync(dir).filter((f) => f.endsWith(".html"));
+function htmlFiles(dir, base = "") {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) out.push(...htmlFiles(join(dir, entry.name), `${base}${entry.name}/`));
+    else if (entry.name.endsWith(".html")) out.push(`${base}${entry.name}`);
+  }
+  return out;
+}
+
+const files = htmlFiles(dir);
 if (!files.length) {
   console.error("validate-jsonld: no HTML files in dist/ — run after prerender.");
   process.exit(1);

@@ -10,12 +10,17 @@
  *
  * How routes are chosen
  * ---------------------
- * A route file is listed iff it declares a `path="..."` in its `<PageMeta>`
- * (the same prop that renders the self-referencing canonical) AND does not
- * contain `noIndex`. Auth/account routes are therefore excluded
+ * Static routes: a route file is listed iff it declares a `path="..."` in its
+ * `<PageMeta>` (the same prop that renders the self-referencing canonical) AND
+ * does not contain `noIndex`. Auth/account routes are therefore excluded
  * automatically; adding `path` to a future public route adds it here with no
- * other change. Dynamic segments (`$id`) are skipped — item-level pages stay
- * off the index until Phase 3 decides they deserve it.
+ * other change. Dynamic segments (`$slug`) are skipped in the static scan.
+ *
+ * Dynamic routes: `scripts/prerender.mjs` writes `dist/seo-manifest.json` with
+ * one entry per live category slug (validated against menu data — unknown
+ * slugs 404 in the app and are never emitted). This script merges the manifest
+ * in, so the sitemap always matches the HTML that was actually built. Offline
+ * builds (no gateway → no manifest) fall back to static routes only.
  *
  * Origin guardrail
  * ----------------
@@ -50,6 +55,12 @@ if (!originMatch) {
 const ORIGIN = originMatch[1];
 
 const entries = [];
+const seen = new Set();
+function add(loc, lastmod, priority) {
+  if (seen.has(loc)) return;
+  seen.add(loc);
+  entries.push({ loc, lastmod, priority });
+}
 for (const file of readdirSync(routesDir)) {
   if (!file.endsWith(".tsx") || file === "__root.tsx") continue;
   const full = join(routesDir, file);
@@ -58,12 +69,27 @@ for (const file of readdirSync(routesDir)) {
   if (!pathMatch) continue; // No canonical path declared → not a public indexable page.
   if (/\bnoIndex\b/.test(src)) continue; // Utility/private route → keep out of the index.
   const routePath = pathMatch[1];
-  if (routePath.includes("$") || routePath.includes("*")) continue; // Dynamic → skip (Phase 3).
+  if (routePath.includes("$") || routePath.includes("*")) continue; // Dynamic → manifest only.
   const mtime = statSync(full).mtime;
   const lastmod = mtime.toISOString().slice(0, 10);
-  const loc = `${ORIGIN}${routePath}`;
   const priority = routePath === "/" ? "1.0" : "0.8";
-  entries.push({ loc, lastmod, priority });
+  add(`${ORIGIN}${routePath}`, lastmod, priority);
+}
+
+// Dynamic category pages from the prerender manifest (if the build fetched data).
+const manifestFile = join(dirname(outFile), "seo-manifest.json");
+try {
+  const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
+  for (const r of manifest.routes ?? []) {
+    if (typeof r.path === "string" && r.path.startsWith("/menu/")) {
+      add(`${ORIGIN}${r.path}`, r.lastmod || new Date().toISOString().slice(0, 10), "0.7");
+    }
+  }
+  console.log(
+    `generate-sitemap: merged ${(manifest.routes ?? []).length} prerendered dynamic routes.`,
+  );
+} catch {
+  console.warn("generate-sitemap: no seo-manifest.json (offline build?) — static routes only.");
 }
 
 entries.sort((a, b) => a.loc.localeCompare(b.loc));

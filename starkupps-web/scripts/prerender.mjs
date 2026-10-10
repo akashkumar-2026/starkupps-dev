@@ -48,8 +48,8 @@
  * or placeholder values. Deliberately omitted fields are listed in the
  * JSON-LD section below with reasons.
  */
-import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -120,6 +120,73 @@ function priceLabel(item) {
 
 function telHref(digits) {
   return digits && digits.trim() ? `tel:+${digits.trim()}` : null;
+}
+
+/** Mirror of src/utils/format.ts slugify — keep identical or slugs 404. */
+function slugify(value) {
+  return String(value).toLowerCase().trim().replace(/\s+/g, "-");
+}
+
+/** Mirror of src/features/menu/category-summary.ts summarizeCategory. */
+function summarizeCat(items) {
+  const prices = (items ?? [])
+    .flatMap((i) => i.variants ?? [])
+    .filter((v) => v.available !== false)
+    .map((v) => v.effectivePrice ?? v.price)
+    .filter((p) => typeof p === "number");
+  const lo = prices.length ? Math.min(...prices) : null;
+  const hi = prices.length ? Math.max(...prices) : null;
+  return {
+    count: (items ?? []).length,
+    range: lo === null || hi === null ? "" : lo === hi ? `₹${lo}` : `₹${lo}–₹${hi}`,
+    allVeg: (items ?? []).length > 0 && (items ?? []).every((i) => i.veg === true),
+  };
+}
+
+/** Mirror of the contact route's displayTime: "12:00" → "12:00 PM". */
+function displayTime(value) {
+  if (!value) return "";
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(value).trim());
+  if (!m) return value;
+  const h24 = Number(m[1]);
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${m[2]} ${suffix}`;
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** Categories with items, in menu order — the hub spokes. */
+function visibleCategories(menu) {
+  const counts = new Map();
+  for (const item of menu.items ?? []) {
+    if (item.effectiveComingSoon) continue;
+    counts.set(item.categoryName, (counts.get(item.categoryName) ?? 0) + 1);
+  }
+  return (menu.categories ?? []).filter((c) => !c.comingSoon && (counts.get(c.name) ?? 0) > 0);
+}
+
+function itemsFor(menu, categoryName) {
+  return (menu.items ?? []).filter(
+    (i) => i.categoryName === categoryName && !i.effectiveComingSoon,
+  );
+}
+
+/** Grouped item listing shared by home and the menu hub. */
+function menuSectionsHtml(menu) {
+  return visibleCategories(menu)
+    .map((c) => {
+      const items = itemsFor(menu, c.name);
+      const lis = items
+        .map((i) => {
+          const price = priceLabel(i);
+          const diet = i.veg === false ? "Non-veg" : i.veg === true ? "Veg" : "";
+          return `<li><h4>${esc(i.name)}</h4>${i.description ? `<p>${esc(i.description)}</p>` : ""}<p>${[price, diet].filter(Boolean).join(" · ")}</p></li>`;
+        })
+        .join("\n");
+      return `<section aria-label="${esc(c.name)}"><h3>${esc(c.name)}</h3>${c.description ? `<p>${esc(c.description)}</p>` : ""}<ul>${lis}</ul></section>`;
+    })
+    .join("\n");
 }
 
 /** Mirror of src/config/site.ts phoneDisplay: `918252433504` → `+91 82524 33504`. */
@@ -259,13 +326,96 @@ function baseNodes(site, ogImage) {
   return { organization, website, cafe };
 }
 
-function homeGraph(site, menu, faqs, ogImage) {
+function homeGraph(site, menu, ogImage) {
   const { organization, website, cafe } = baseNodes(site, ogImage);
-  const graph = [organization, website, cafe, menuNode(menu)];
+  // NOTE: the home FAQ section stays visible but unschematized — the single
+  // canonical FAQPage lives on /faq, so AI systems get one Q&A source of truth.
+  return {
+    "@context": "https://schema.org",
+    "@graph": [organization, website, cafe, menuNode(menu)],
+  };
+}
+
+/** crumbs: [{name, item?}] — item omitted for the current page. */
+function breadcrumbGraph(crumbs, idBase) {
+  return {
+    "@type": "BreadcrumbList",
+    "@id": `${ORIGIN}${idBase}#breadcrumbs`,
+    itemListElement: crumbs.map((c, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: c.name,
+      ...(c.item ? { item: c.item } : {}),
+    })),
+  };
+}
+
+function menuGraph(site, menu, ogImage) {
+  const { organization, website } = baseNodes(site, ogImage);
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      organization,
+      website,
+      menuNode(menu),
+      breadcrumbGraph(
+        [
+          { name: "Home", item: `${ORIGIN}/` },
+          { name: "Menu", item: `${ORIGIN}/menu` },
+        ],
+        "/menu",
+      ),
+    ],
+  };
+}
+
+function categoryGraph(site, categoryName, ogImage) {
+  const { organization, website } = baseNodes(site, ogImage);
+  const slug = slugify(categoryName);
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      organization,
+      website,
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${ORIGIN}/menu/${slug}#breadcrumbs`,
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${ORIGIN}/` },
+          { "@type": "ListItem", position: 2, name: "Menu", item: `${ORIGIN}/menu` },
+          { "@type": "ListItem", position: 3, name: categoryName },
+        ],
+      },
+    ],
+  };
+}
+
+function contactGraph(site, ogImage) {
+  const { organization, website, cafe } = baseNodes(site, ogImage);
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      organization,
+      website,
+      cafe,
+      breadcrumbGraph(
+        [
+          { name: "Home", item: `${ORIGIN}/` },
+          { name: "Contact", item: `${ORIGIN}/contact` },
+        ],
+        "/contact",
+      ),
+    ],
+  };
+}
+
+function faqGraph(site, faqs, ogImage) {
+  const { organization, website } = baseNodes(site, ogImage);
+  const graph = [organization, website];
   if ((faqs ?? []).length) {
     graph.push({
       "@type": "FAQPage",
-      "@id": `${ORIGIN}/#faq`,
+      "@id": `${ORIGIN}/faq#main`,
       mainEntity: faqs.map((f) => ({
         "@type": "Question",
         name: f.question,
@@ -273,6 +423,14 @@ function homeGraph(site, menu, faqs, ogImage) {
       })),
     });
   }
+  const crumbs = breadcrumbGraph(
+    [
+      { name: "Home", item: `${ORIGIN}/` },
+      { name: "FAQ", item: `${ORIGIN}/faq` },
+    ],
+    "/faq",
+  );
+  graph.push(crumbs);
   return { "@context": "https://schema.org", "@graph": graph };
 }
 
@@ -339,27 +497,8 @@ function buildHomeBody(site, menu, faqs) {
   const directions = mapsQuery
     ? `https://maps.google.com/?q=${encodeURIComponent(mapsQuery)}`
     : null;
-  const cats = (menu.categories ?? []).filter((c) => !c.comingSoon);
-  const itemsByCat = new Map();
-  for (const item of menu.items ?? []) {
-    if (item.effectiveComingSoon) continue;
-    if (!itemsByCat.has(item.categoryName)) itemsByCat.set(item.categoryName, []);
-    itemsByCat.get(item.categoryName).push(item);
-  }
-  const menuSections = cats
-    .map((c) => {
-      const items = itemsByCat.get(c.name) ?? [];
-      if (!items.length) return "";
-      const lis = items
-        .map((i) => {
-          const price = priceLabel(i);
-          const diet = i.veg === false ? "Non-veg" : i.veg === true ? "Veg" : "";
-          return `<li><h4>${esc(i.name)}</h4>${i.description ? `<p>${esc(i.description)}</p>` : ""}<p>${[price, diet].filter(Boolean).join(" · ")}</p></li>`;
-        })
-        .join("\n");
-      return `<section aria-label="${esc(c.name)}"><h3>${esc(c.name)}</h3>${c.description ? `<p>${esc(c.description)}</p>` : ""}<ul>${lis}</ul></section>`;
-    })
-    .join("\n");
+  const cats = visibleCategories(menu);
+  const menuSections = menuSectionsHtml(menu);
   const faqBlock = (faqs ?? [])
     .map((f) => `<div><h3>${esc(f.question)}</h3><p>${esc(f.answer)}</p></div>`)
     .join("\n");
@@ -383,6 +522,125 @@ ${faqBlock ? `<section aria-label="Frequently asked questions"><h2>Frequently as
 <p>${tel ? `<a href="${tel}">Call ${esc(site.phoneDigits.trim())}</a>` : ""} ${wa ? `<a href="${wa}">WhatsApp us</a>` : ""} ${directions ? `<a href="${esc(directions)}">Get directions</a>` : ""}</p></section>
 </main>
 <footer><p>${esc(site.brandName || BRAND)} — ${esc(site.tagline || "")}</p><p>${esc(site.address || "")}</p>${site.fssaiLicense ? `<p>FSSAI licence ${esc(site.fssaiLicense)}</p>` : ""}<nav aria-label="Footer"><a href="${ORIGIN}/">Home</a> <a href="${ORIGIN}/about">About</a></nav></footer>`;
+}
+
+function siteHeader(site) {
+  return `<header><nav aria-label="Primary"><a href="${ORIGIN}/">${esc(site.brandName || BRAND)}</a> <a href="${ORIGIN}/menu">Menu</a> <a href="${ORIGIN}/about">About</a> <a href="${ORIGIN}/contact">Contact</a></nav></header>`;
+}
+
+function siteFooter(site) {
+  return `<footer><p>${esc(site.brandName || BRAND)} — ${esc(site.tagline || "")}</p><p>${esc(site.address || "")}</p>${site.fssaiLicense ? `<p>FSSAI licence ${esc(site.fssaiLicense)}</p>` : ""}<nav aria-label="Footer"><a href="${ORIGIN}/">Home</a> <a href="${ORIGIN}/menu">Menu</a> <a href="${ORIGIN}/about">About</a> <a href="${ORIGIN}/contact">Contact</a> <a href="${ORIGIN}/faq">FAQ</a></nav></footer>`;
+}
+
+function crumbsHtml(items) {
+  return `<nav aria-label="Breadcrumb"><ol>${items
+    .map((c) =>
+      c.to
+        ? `<li><a href="${c.to}">${esc(c.label)}</a></li>`
+        : `<li aria-current="page">${esc(c.label)}</li>`,
+    )
+    .join("")}</ol></nav>`;
+}
+
+// --- menu hub ---------------------------------------------------------------
+function buildMenuBody(site, menu) {
+  const cats = visibleCategories(menu);
+  const total = (menu.items ?? []).filter((i) => !i.effectiveComingSoon).length;
+  const cards = cats
+    .map((c) => {
+      const s = summarizeCat(itemsFor(menu, c.name));
+      return `<li><a href="${ORIGIN}/menu/${slugify(c.name)}">${esc(c.name)} — ${s.count} items${s.range ? ` · ${s.range}` : ""}</a>${c.description ? `<p>${esc(c.description)}</p>` : ""}</li>`;
+    })
+    .join("\n");
+  return `${siteHeader(site)}
+<main>
+${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "Menu" }])}
+<h1>The StarKupps menu.</h1>
+<p>${total > 0 ? `Everything we make, in one place: ${total} items across ${cats.length} categories, all vegetarian. Order for dine-in, takeaway or delivery in Munger.` : "Everything we make, in one place."}</p>
+<nav aria-label="Menu categories"><ul>${cards}</ul></nav>
+<section aria-label="Full menu" id="menu"><h2>Full menu with prices</h2>${menuSectionsHtml(menu)}</section>
+</main>
+${siteFooter(site)}`;
+}
+
+// --- category page -----------------------------------------------------------
+function buildCategoryBody(site, menu, cat) {
+  const slug = slugify(cat.name);
+  const items = itemsFor(menu, cat.name);
+  const s = summarizeCat(items);
+  const siblings = visibleCategories(menu)
+    .filter((c) => c.name !== cat.name)
+    .map((c) => `<li><a href="${ORIGIN}/menu/${slugify(c.name)}">${esc(c.name)}</a></li>`)
+    .join("");
+  const lis = items
+    .map((i) => {
+      const price = priceLabel(i);
+      const diet = i.veg === false ? "Non-veg" : i.veg === true ? "Veg" : "";
+      return `<li><h3>${esc(i.name)}</h3>${i.description ? `<p>${esc(i.description)}</p>` : ""}<p>${[price, diet].filter(Boolean).join(" · ")}</p></li>`;
+    })
+    .join("\n");
+  return `${siteHeader(site)}
+<main>
+${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "Menu", to: `${ORIGIN}/menu` }, { label: cat.name }])}
+<h1>${esc(cat.name)} at ${esc(site.brandName || BRAND)}.</h1>
+<p>${cat.description ? `${esc(cat.description)} ` : ""}${s.count > 0 ? `${s.count} option${s.count === 1 ? "" : "s"}${s.range ? ` from ${s.range}` : ""}, made to order at our Munger café. ` : ""}${s.allVeg ? "Everything here is vegetarian. " : ""}<a href="${ORIGIN}/menu">See the full menu</a> or <a href="${ORIGIN}/contact">find us</a>.</p>
+<section aria-label="${esc(cat.name)}"><h2>${esc(cat.name)} — all items</h2><ul>${lis}</ul></section>
+${siblings ? `<nav aria-label="More menu categories"><h2>More from the menu</h2><ul>${siblings}</ul></nav>` : ""}
+</main>
+${siteFooter(site)}`;
+}
+
+// --- contact -----------------------------------------------------------------
+function buildContactBody(site) {
+  const tel = telHref(site.phoneDigits);
+  const wa = site.whatsappNumber?.trim() ? `https://wa.me/${site.whatsappNumber.trim()}` : null;
+  const mapsQuery = site.mapsQuery?.trim() || site.address?.trim();
+  const directions = mapsQuery
+    ? `https://maps.google.com/?q=${encodeURIComponent(mapsQuery)}`
+    : null;
+  const mapEmbed = mapsQuery
+    ? `https://www.google.com/maps?q=${encodeURIComponent(mapsQuery)}&output=embed`
+    : null;
+  const hours = site.weeklyHours ?? [];
+  const sunday = hours.find((h) => h.dayOfWeek === 0);
+  const rows = [1, 2, 3, 4, 5, 6, 0]
+    .map((d) => {
+      const h = hours.find((row) => row.dayOfWeek === d);
+      const val =
+        !h || !h.isOpen
+          ? "Closed"
+          : h.openTime && h.closeTime
+            ? `${displayTime(h.openTime)} – ${displayTime(h.closeTime)}`
+            : site.hoursShort || "";
+      return `<tr><th scope="row">${DAY_NAMES[d]}</th><td>${esc(val)}</td></tr>`;
+    })
+    .join("");
+  return `${siteHeader(site)}
+<main>
+${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "Contact" }])}
+<h1>Find us in Munger.</h1>
+<section aria-label="Address"><h2>Where is StarKupps in Munger?</h2><address>${esc(site.address || "")}</address>${site.addressDetail && site.addressDetail !== site.address ? `<p>Landmark: ${esc(site.addressDetail)}</p>` : ""}
+<p>${directions ? `<a href="${esc(directions)}">Get directions</a>` : ""} ${tel ? `<a href="${tel}">Call ${esc(phoneDisplay(site.phoneDigits))}</a>` : ""} ${wa ? `<a href="${wa}">WhatsApp us</a>` : ""}</p>
+${mapEmbed ? `<iframe title="Map showing the StarKupps cafe in Munger" src="${esc(mapEmbed)}" loading="lazy"></iframe>` : ""}</section>
+<section aria-label="Hours"><h2>When is StarKupps open?</h2>${sunday ? `<p>${sunday.isOpen ? "Yes — we are open on Sundays." : "We are closed on Sundays."}${site.hoursNote ? ` ${esc(site.hoursNote)}.` : ""}</p>` : ""}${hours.length ? `<table><caption>Opening hours by day</caption><tbody>${rows}</tbody></table>` : site.hoursSummary ? `<p>${esc(site.hoursSummary)}</p>` : ""}</section>
+<section aria-label="Contact"><h2>How do I contact StarKupps?</h2><p>Call or WhatsApp us for orders, party bookings and feedback. <a href="${ORIGIN}/menu">See the full menu</a>.</p></section>
+</main>
+${siteFooter(site)}`;
+}
+
+// --- faq ---------------------------------------------------------------------
+function buildFaqBody(site, faqs) {
+  const blocks = (faqs ?? [])
+    .map((f) => `<div><h2>${esc(f.question)}</h2><p>${esc(f.answer)}</p></div>`)
+    .join("\n");
+  return `${siteHeader(site)}
+<main>
+${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "FAQ" }])}
+<h1>Questions, answered.</h1>
+<p>Everything about ordering from ${esc(site.brandName || BRAND)} in Munger. Still stuck? <a href="${ORIGIN}/contact">Contact us</a>.</p>
+<section aria-label="Frequently asked questions">${blocks}</section>
+</main>
+${siteFooter(site)}`;
 }
 
 // --- about body (mirrors src/app/routes/about.tsx copy) ----------------------
@@ -477,30 +735,110 @@ const aboutMeta = {
 };
 
 const ogImage = resolveOgImage();
-writeFileSync(
-  shellPath,
-  inject(
-    shell,
-    buildHead({ ...homeMeta, jsonLd: homeGraph(site, menu, faqs, ogImage) }),
+const today = new Date().toISOString().slice(0, 10);
+const manifest = []; // Dynamic routes (category slugs) the sitemap merges in.
+
+function emit(relPath, meta, body) {
+  // Vercel cleanUrls serves `/menu/x` from `dist/menu/x.html`, so every route
+  // maps to a sibling .html file — never a directory, never extensionless.
+  const file = relPath === "/" ? shellPath : join(distDir, `${relPath.slice(1)}.html`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, inject(shell, buildHead(meta), body, relPath));
+  const lastmod = meta.lastmod || today;
+  manifest.push({ path: relPath, lastmod });
+  return `${ORIGIN}${relPath}`;
+}
+
+const urls = [];
+urls.push(
+  emit(
+    "/",
+    { ...homeMeta, jsonLd: homeGraph(site, menu, ogImage) },
     buildHomeBody(site, menu, faqs),
-    "home",
   ),
 );
-writeFileSync(
-  join(distDir, "about.html"),
-  inject(
-    shell,
-    buildHead({ ...aboutMeta, jsonLd: aboutGraph(site, ogImage) }),
-    buildAboutBody(site),
-    "about",
+urls.push(
+  emit("/about", { ...aboutMeta, jsonLd: aboutGraph(site, ogImage) }, buildAboutBody(site)),
+);
+
+// Menu hub.
+urls.push(
+  emit(
+    "/menu",
+    {
+      path: "/menu",
+      title: "Menu",
+      description:
+        "The full StarKupps menu in Munger: cold coffee, shakes, mocktails, pizza, sandwiches and burgers, with prices. All vegetarian.",
+      ogDescription: "Every cold coffee, pizza, burger and mocktail we make — with prices.",
+      jsonLd: menuGraph(site, menu, ogImage),
+    },
+    buildMenuBody(site, menu),
   ),
 );
+
+// One page per live category slug (unknown slugs 404 in the app — never emitted).
+for (const cat of visibleCategories(menu)) {
+  const slug = slugify(cat.name);
+  const items = itemsFor(menu, cat.name);
+  const s = summarizeCat(items);
+  const lastmod = (cat.updatedAt ?? "").slice(0, 10) || today;
+  urls.push(
+    emit(
+      `/menu/${slug}`,
+      {
+        path: `/menu/${slug}`,
+        title: `${cat.name} in Munger`,
+        description:
+          `${cat.name} at StarKupps, Munger${cat.description ? ` — ${cat.description}` : ""}${s.range ? ` From ${s.range}.` : ""} All vegetarian.`.slice(
+            0,
+            160,
+          ),
+        ogDescription: `${cat.name} in Munger — ${s.count} options${s.range ? ` from ${s.range}` : ""}.`,
+        lastmod,
+        jsonLd: categoryGraph(site, cat.name, ogImage),
+      },
+      buildCategoryBody(site, menu, cat),
+    ),
+  );
+}
+
+// Contact + FAQ.
+urls.push(
+  emit(
+    "/contact",
+    {
+      path: "/contact",
+      title: "Contact & location",
+      description:
+        "Find StarKupps in Munger: address near Azad Chowk, opening hours, phone and WhatsApp, plus directions.",
+      ogDescription: "Address, hours, phone and directions to StarKupps, Munger.",
+      lastmod: (site.updatedAt ?? "").slice(0, 10) || today,
+      jsonLd: contactGraph(site, ogImage),
+    },
+    buildContactBody(site),
+  ),
+);
+urls.push(
+  emit(
+    "/faq",
+    {
+      path: "/faq",
+      title: "FAQ",
+      description: `StarKupps Munger FAQs: menu, ordering, hours and location${(faqs ?? []).length ? ` — ${faqs.length} answers` : ""}.`,
+      ogDescription: "Answers about the StarKupps menu, ordering, hours and location.",
+      jsonLd: faqGraph(site, faqs, ogImage),
+    },
+    buildFaqBody(site, faqs),
+  ),
+);
+
+writeFileSync(join(distDir, "seo-manifest.json"), JSON.stringify({ routes: manifest }, null, 2));
 
 const itemCount = (menu.items ?? []).length;
-const catCount = (menu.categories ?? []).length;
+const catCount = visibleCategories(menu).length;
 console.log(
-  `prerender: home + about written in ${Date.now() - t0}ms (${catCount} categories, ${itemCount} items, ${(faqs ?? []).length} FAQs).`,
+  `prerender: ${urls.length} pages written in ${Date.now() - t0}ms (${catCount} categories, ${itemCount} items, ${(faqs ?? []).length} FAQs).`,
 );
 
-await submitIndexNow([`${ORIGIN}/`, `${ORIGIN}/about`]);
-console.log(`prerender: basename check — ${basename(shellPath)} + about.html.`);
+await submitIndexNow(urls);
