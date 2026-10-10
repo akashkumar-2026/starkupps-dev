@@ -178,6 +178,19 @@ function displayTime(value) {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+/** ISO datetime → YYYY-MM-DD date stamp (rendered verbatim so schema and text match). */
+function dateOnly(iso) {
+  const s = String(iso ?? "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+/** Latest category change — the best available "menu modified" signal
+ * (items carry no timestamps; documented limitation, not a guess). */
+function menuModified(menu) {
+  const dates = (menu.categories ?? []).map((c) => dateOnly(c.updatedAt)).filter(Boolean);
+  return dates.length ? dates.sort().at(-1) : "";
+}
+
 /** Categories with items, in menu order — the hub spokes. */
 function visibleCategories(menu) {
   const counts = new Map();
@@ -294,6 +307,7 @@ function menuNode(menu) {
     "@type": "Menu",
     "@id": `${ORIGIN}/#menu`,
     name: `${BRAND} menu`,
+    ...(menuModified(menu) ? { dateModified: menuModified(menu) } : {}),
     hasMenuSection: sections,
   };
 }
@@ -420,6 +434,16 @@ function contactGraph(site, ogImage) {
       organization,
       website,
       cafe,
+      {
+        "@type": "WebPage",
+        "@id": `${ORIGIN}/contact#page`,
+        url: `${ORIGIN}/contact`,
+        name: "Contact & location — StarKupps, Munger",
+        ...(dateOnly(site.updatedAt) ? { dateModified: dateOnly(site.updatedAt) } : {}),
+        // Voice-assistant hint: the direct-answer paragraphs (class="answer"
+        // in the template above — selectors must match visible content).
+        speakable: { "@type": "SpeakableSpecification", cssSelector: [".answer"] },
+      },
       breadcrumbGraph(
         [
           { name: "Home", item: `${ORIGIN}/` },
@@ -453,6 +477,15 @@ function faqGraph(site, faqs, ogImage) {
     "/faq",
   );
   graph.push(crumbs);
+  // Voice-assistant hint (no dateModified: FAQs carry no timestamps and we
+  // don't invent one). Selectors must match visible .answer paragraphs.
+  graph.push({
+    "@type": "WebPage",
+    "@id": `${ORIGIN}/faq#page`,
+    url: `${ORIGIN}/faq`,
+    name: "FAQ — StarKupps, Munger",
+    speakable: { "@type": "SpeakableSpecification", cssSelector: [".answer"] },
+  });
   return { "@context": "https://schema.org", "@graph": graph };
 }
 
@@ -545,15 +578,17 @@ ${faqBlock ? `<section aria-label="Frequently asked questions"><h2>Frequently as
 <section aria-label="Visit us"><h2>Find us in Munger</h2><address>${esc(site.address || "")}</address><p>${esc(site.hoursSummary || "")}${site.hoursNote ? ` · ${esc(site.hoursNote)}` : ""}</p>
 <p>${tel ? `<a href="${tel}">Call ${esc(site.phoneDigits.trim())}</a>` : ""} ${wa ? `<a href="${wa}">WhatsApp us</a>` : ""} ${directions ? `<a href="${esc(directions)}">Get directions</a>` : ""}</p></section>
 </main>
-<footer><p>${esc(site.brandName || BRAND)} — ${esc(site.tagline || "")}</p><p>${esc(site.address || "")}</p>${site.fssaiLicense ? `<p>FSSAI licence ${esc(site.fssaiLicense)}</p>` : ""}<nav aria-label="Footer"><a href="${ORIGIN}/">Home</a> <a href="${ORIGIN}/about">About</a></nav></footer>`;
+${siteFooter(site, dateOnly(site.updatedAt))}`;
 }
 
 function siteHeader(site) {
   return `<header><nav aria-label="Primary"><a href="${ORIGIN}/">${esc(site.brandName || BRAND)}</a> <a href="${ORIGIN}/menu">Menu</a> <a href="${ORIGIN}/about">About</a> <a href="${ORIGIN}/contact">Contact</a></nav></header>`;
 }
 
-function siteFooter(site) {
-  return `<footer><p>${esc(site.brandName || BRAND)} — ${esc(site.tagline || "")}</p><p>${esc(site.address || "")}</p>${site.fssaiLicense ? `<p>FSSAI licence ${esc(site.fssaiLicense)}</p>` : ""}<nav aria-label="Footer"><a href="${ORIGIN}/">Home</a> <a href="${ORIGIN}/menu">Menu</a> <a href="${ORIGIN}/about">About</a> <a href="${ORIGIN}/contact">Contact</a> <a href="${ORIGIN}/faq">FAQ</a></nav></footer>`;
+function siteFooter(site, lastmod) {
+  // Social links: ONLY profiles verified live (Instagram resolves, X @StarKupps
+  // exists). Snapchat/Facebook 404 — omitted until the owner supplies real URLs.
+  return `<footer><p>${esc(site.brandName || BRAND)} — ${esc(site.tagline || "")}</p><p>${esc(site.address || "")}</p>${site.fssaiLicense ? `<p>FSSAI licence ${esc(site.fssaiLicense)}</p>` : ""}<nav aria-label="Social"><a href="https://instagram.com/starkupps" rel="noopener">StarKupps on Instagram</a> <a href="https://x.com/starkupps" rel="noopener">StarKupps on X</a></nav><nav aria-label="Footer"><a href="${ORIGIN}/">Home</a> <a href="${ORIGIN}/menu">Menu</a> <a href="${ORIGIN}/about">About</a> <a href="${ORIGIN}/contact">Contact</a> <a href="${ORIGIN}/faq">FAQ</a></nav>${lastmod ? `<p>Last updated: <time datetime="${lastmod}">${lastmod}</time></p>` : ""}</footer>`;
 }
 
 function crumbsHtml(items) {
@@ -584,7 +619,7 @@ ${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "Menu" }])}
 <nav aria-label="Menu categories"><ul>${cards}</ul></nav>
 <section aria-label="Full menu" id="menu"><h2>Full menu with prices</h2>${menuSectionsHtml(menu)}</section>
 </main>
-${siteFooter(site)}`;
+${siteFooter(site, menuModified(menu))}`;
 }
 
 // --- category page -----------------------------------------------------------
@@ -611,7 +646,7 @@ ${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "Menu", to: `${ORIGI
 <section aria-label="${esc(cat.name)}"><h2>${esc(cat.name)} — all items</h2><ul>${lis}</ul></section>
 ${siblings ? `<nav aria-label="More menu categories"><h2>More from the menu</h2><ul>${siblings}</ul></nav>` : ""}
 </main>
-${siteFooter(site)}`;
+${siteFooter(site, dateOnly(cat.updatedAt))}`;
 }
 
 // --- contact -----------------------------------------------------------------
@@ -646,16 +681,16 @@ ${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "Contact" }])}
 <section aria-label="Address"><h2>Where is StarKupps in Munger?</h2><address>${esc(site.address || "")}</address>${site.addressDetail && site.addressDetail !== site.address ? `<p>Landmark: ${esc(site.addressDetail)}</p>` : ""}
 <p>${directions ? `<a href="${esc(directions)}">Get directions</a>` : ""} ${tel ? `<a href="${tel}">Call ${esc(phoneDisplay(site.phoneDigits))}</a>` : ""} ${wa ? `<a href="${wa}">WhatsApp us</a>` : ""}</p>
 ${mapEmbed ? `<iframe title="Map showing the StarKupps cafe in Munger" src="${esc(mapEmbed)}" loading="lazy"></iframe>` : ""}</section>
-<section aria-label="Hours"><h2>When is StarKupps open?</h2>${sunday ? `<p>${sunday.isOpen ? "Yes — we are open on Sundays." : "We are closed on Sundays."}${site.hoursNote ? ` ${esc(site.hoursNote)}.` : ""}</p>` : ""}${hours.length ? `<table><caption>Opening hours by day</caption><tbody>${rows}</tbody></table>` : site.hoursSummary ? `<p>${esc(site.hoursSummary)}</p>` : ""}</section>
-<section aria-label="Contact"><h2>How do I contact StarKupps?</h2><p>Call or WhatsApp us for orders, party bookings and feedback. <a href="${ORIGIN}/menu">See the full menu</a>.</p></section>
+<section aria-label="Hours"><h2>When is StarKupps open?</h2>${sunday ? `<p class="answer">${sunday.isOpen ? "Yes — we are open on Sundays." : "We are closed on Sundays."}${site.hoursNote ? ` ${esc(site.hoursNote)}.` : ""}</p>` : ""}${hours.length ? `<table><caption>Opening hours by day</caption><tbody>${rows}</tbody></table>` : site.hoursSummary ? `<p>${esc(site.hoursSummary)}</p>` : ""}</section>
+<section aria-label="Contact"><h2>How do I contact StarKupps?</h2><p class="answer">Call or WhatsApp us for orders, party bookings and feedback. <a href="${ORIGIN}/menu">See the full menu</a>.</p></section>
 </main>
-${siteFooter(site)}`;
+${siteFooter(site, dateOnly(site.updatedAt))}`;
 }
 
 // --- faq ---------------------------------------------------------------------
 function buildFaqBody(site, faqs) {
   const blocks = (faqs ?? [])
-    .map((f) => `<div><h2>${esc(f.question)}</h2><p>${esc(f.answer)}</p></div>`)
+    .map((f) => `<div><h2>${esc(f.question)}</h2><p class="answer">${esc(f.answer)}</p></div>`)
     .join("\n");
   return `${siteHeader(site)}
 <main>
@@ -664,7 +699,7 @@ ${crumbsHtml([{ label: "Home", to: `${ORIGIN}/` }, { label: "FAQ" }])}
 <p>Everything about ordering from ${esc(site.brandName || BRAND)} in Munger. Still stuck? <a href="${ORIGIN}/contact">Contact us</a>.</p>
 <section aria-label="Frequently asked questions">${blocks}</section>
 </main>
-${siteFooter(site)}`;
+${siteFooter(site, "")}`;
 }
 
 // --- about body (mirrors src/app/routes/about.tsx copy) ----------------------
@@ -689,7 +724,7 @@ function buildAboutBody(site) {
 <p><address>${esc(site.address || "")}</address></p>
 <p>${directions ? `<a href="${esc(directions)}">Get directions in Google Maps</a>` : ""} ${tel ? `<a href="${tel}">Call ${esc(phoneDisplay(site.phoneDigits))}</a>` : ""}</p>
 </main>
-<footer><p>${esc(site.brandName || BRAND)} — ${esc(site.tagline || "")}</p><nav aria-label="Footer"><a href="${ORIGIN}/">Home</a> <a href="${ORIGIN}/about">About</a></nav></footer>`;
+${siteFooter(site, dateOnly(site.updatedAt))}`;
 }
 
 function inject(shellHtml, headHtml, bodyHtml, label) {

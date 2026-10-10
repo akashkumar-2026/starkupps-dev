@@ -106,6 +106,18 @@ for (const file of files) {
           errors.push(`${file}: ${n["@type"]} forbidden without real visible reviews`);
         for (const [k, v] of Object.entries(n))
           if (typeof v === "string") checkPlaceholders(v, `${file} ${n["@type"]}.${k}`);
+        // Freshness honesty: every dateModified must be visible on the page.
+        if (typeof n.dateModified === "string" && n.dateModified && !text.includes(n.dateModified))
+          errors.push(`${file}: dateModified ${n.dateModified} not in visible text`);
+        // Speakable selectors must match real visible elements.
+        if (n["@type"] === "SpeakableSpecification") {
+          const sels = Array.isArray(n.cssSelector) ? n.cssSelector : [n.cssSelector];
+          for (const sel of sels) {
+            const cls = /^\.([\w-]+)$/.exec(sel ?? "");
+            if (cls && !html.includes(`class="${cls[1]}`) && !html.includes(` ${cls[1]}"`))
+              errors.push(`${file}: speakable selector ${sel} matches nothing visible`);
+          }
+        }
       });
       switch (node["@type"]) {
         case "Organization":

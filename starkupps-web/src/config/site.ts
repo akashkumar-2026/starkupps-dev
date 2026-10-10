@@ -28,6 +28,17 @@ export function canonicalUrl(path: string): string {
   return `${CANONICAL_ORIGIN}${clean}`;
 }
 
+/**
+ * Verified-live social profiles (checked 2026-10-10; keep in sync with the
+ * Organization sameAs in `scripts/prerender.mjs`). Snapchat/Facebook are
+ * deliberately absent — both URL patterns 404. Add them only with confirmed
+ * URLs (owner-actions #6/#13).
+ */
+export const SOCIAL_LINKS = [
+  { label: "StarKupps on Instagram", href: "https://instagram.com/starkupps" },
+  { label: "StarKupps on X", href: "https://x.com/starkupps" },
+] as const;
+
 /** Built from live settings. Empty strings yield no link, by design. */
 export function siteLinks(site: SiteSettings) {
   const mapsQuery = site.mapsQuery.trim();

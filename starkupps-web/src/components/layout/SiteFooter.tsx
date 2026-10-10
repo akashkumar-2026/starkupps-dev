@@ -1,7 +1,7 @@
 import { Phone } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 
-import { phoneDisplay, siteLinks } from "@/config/site";
+import { SOCIAL_LINKS, phoneDisplay, siteLinks } from "@/config/site";
 import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
 
 /**
@@ -98,6 +98,27 @@ export function SiteFooter() {
             FAQ
           </Link>
         </nav>
+
+        <nav aria-label="Social" className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          {SOCIAL_LINKS.map((s) => (
+            <a
+              key={s.href}
+              href={s.href}
+              target="_blank"
+              rel="noopener"
+              className="opacity-80 hover:opacity-100 hover:underline"
+            >
+              {s.label}
+            </a>
+          ))}
+        </nav>
+
+        {site?.updatedAt?.slice(0, 10) && (
+          <p className="mt-4 text-xs opacity-60">
+            Last updated:{" "}
+            <time dateTime={site.updatedAt.slice(0, 10)}>{site.updatedAt.slice(0, 10)}</time>
+          </p>
+        )}
       </div>
     </footer>
   );
