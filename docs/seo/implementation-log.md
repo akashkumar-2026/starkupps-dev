@@ -4,6 +4,15 @@ Running log of every SEO change: what, why, evidence, rollback. Latest first.
 
 ---
 
+## 2026-10-10 — AEO close-out (commit `08c62fb`)
+
+Freshness signaling answer engines use to trust content: visible `Last updated`
++ `dateModified` from real `updatedAt` (site row for /, /about, /contact;
+category timestamps for menu pages; FAQ honestly unstamped — no source).
+SpeakableSpecification on /faq + /contact WebPage nodes (selectors
+CI-enforced). Footer social nav (verified-live only) in React + prerender.
+Validator extended for both rules; all green.
+
 ## 2026-10-10 — CI guardrails + risk register (this commit)
 
 - `scripts/assert-seo.mjs` (postbuild last): one title/H1, canonical-vs-path
