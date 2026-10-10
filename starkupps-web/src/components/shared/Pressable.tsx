@@ -1,24 +1,19 @@
-import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
-import { springs } from "@/utils/motion";
+import type { ButtonHTMLAttributes } from "react";
+
 import { cn } from "@/utils/cn";
 
-type Props = HTMLMotionProps<"button"> & { scale?: number };
+type Props = ButtonHTMLAttributes<HTMLButtonElement>;
 
 /**
  * The shared touch primitive for buttons that are not `<Button>`.
  *
  * ## Feedback
  *
- * Two channels, because one is not enough on a phone:
- *
- * - `whileTap` scales the element down. Nice, but `motion` omits it entirely
- *   when `prefers-reduced-motion: reduce` is set — so those users previously got
- *   *no* press feedback whatsoever, which is backwards: they are the group most
- *   likely to be relying on non-motion confirmation that a tap registered.
- * - `active:opacity-90` is a plain CSS state that always applies, including
- *   under reduced motion.
- *
- * So `whileTap` is additive, and `pressable` is the guarantee.
+ * Press feedback is the plain-CSS `pressable` utility (`:active` opacity
+ * step): it applies on touch, with mouse and under reduced motion, and needs
+ * no JS. This component used to add a `whileTap` scale via `motion/react`,
+ * but that put a 130 KB animation library on the critical path of every page
+ * for a nicety — the opacity step is the guaranteed channel and it stays.
  *
  * ## Target size
  *
@@ -26,17 +21,14 @@ type Props = HTMLMotionProps<"button"> & { scale?: number };
  * component does not guess a height, because a component that silently padded
  * its children would stop call sites from being honest about their own layout.
  */
-export function Pressable({ className, scale = 0.97, children, ...rest }: Props) {
-  const reduced = useReducedMotion();
+export function Pressable({ className, children, ...rest }: Props) {
   return (
-    <motion.button
+    <button
       type="button"
-      {...(reduced ? {} : { whileTap: { scale } })}
-      transition={reduced ? { duration: 0.1 } : springs.addToCart}
       className={cn("pressable select-none touch-manipulation", className)}
       {...rest}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }

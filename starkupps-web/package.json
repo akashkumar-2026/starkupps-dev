@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc --noEmit",
+    "postbuild": "node scripts/prerender.mjs && node scripts/validate-jsonld.mjs && node scripts/generate-sitemap.mjs && node scripts/assert-seo.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

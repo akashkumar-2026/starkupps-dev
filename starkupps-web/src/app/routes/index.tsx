@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useReducedMotion } from "motion/react";
 import { ArrowDown, RefreshCw, Star } from "lucide-react";
 
 import { PageMeta } from "@/app/PageMeta";
@@ -8,21 +7,43 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { Pressable } from "@/components/shared/Pressable";
 import { ResponsiveImage } from "@/components/shared/ResponsiveImage";
 import { SiteFooter } from "@/components/layout/SiteFooter";
-import { CartSheet } from "@/features/cart/components/CartSheet";
-import { StickyCartBar } from "@/features/cart/components/StickyCartBar";
-import { GallerySection } from "@/features/content/components/GallerySection";
+import { LazyCartUi } from "@/features/cart/components/LazyCartUi";
 import { LocationSection } from "@/features/content/components/LocationSection";
-import { TrustSection } from "@/features/content/components/TrustSection";
-import { FaqSection } from "@/features/content/components/FaqSection";
 import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
-import { InstagramSection } from "@/features/instagram/components/InstagramSection";
 import { CategoryImage } from "@/features/menu/category-images";
 import { usePublicMenu } from "@/features/menu/usePublicMenu";
-import { MenuSection } from "@/features/menu/components/MenuSection";
 import { Header } from "@/components/layout/Header";
 import { slugify } from "@/utils/format";
-import { springs } from "@/utils/motion";
 import heroImg from "@/assets/hero-coffee.jpg";
+
+/**
+ * Below-the-fold sections load after first paint. Home's LCP element is the
+ * hero image; everything below it (menu, trust, gallery, Instagram, FAQ)
+ * defers via lazy + null fallbacks. Insertions happen below the viewport, so
+ * no layout shift is visible (CLS unaffected). Menu/contact pages keep these
+ * static — there the menu IS the LCP context.
+ */
+const MenuSection = lazy(() =>
+  import("@/features/menu/components/MenuSection").then((m) => ({ default: m.MenuSection })),
+);
+const TrustSection = lazy(() =>
+  import("@/features/content/components/TrustSection").then((m) => ({
+    default: m.TrustSection,
+  })),
+);
+const GallerySection = lazy(() =>
+  import("@/features/content/components/GallerySection").then((m) => ({
+    default: m.GallerySection,
+  })),
+);
+const InstagramSection = lazy(() =>
+  import("@/features/instagram/components/InstagramSection").then((m) => ({
+    default: m.InstagramSection,
+  })),
+);
+const FaqSection = lazy(() =>
+  import("@/features/content/components/FaqSection").then((m) => ({ default: m.FaqSection })),
+);
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -100,7 +121,6 @@ function CategoryGrid({ onSelect }: { onSelect: (id: string) => void }) {
         <Pressable
           key={category.id}
           onClick={() => onSelect(category.id)}
-          transition={springs.section}
           className="group relative h-56 overflow-hidden rounded-3xl text-left shadow-card"
         >
           <CategoryImage
@@ -153,7 +173,9 @@ function StatsStrip() {
 
 function Home() {
   const [category, setCategory] = useState<string>("coffee");
-  const reducedMotion = useReducedMotion();
+  // matchMedia instead of motion's hook: this route no longer imports motion.
+  const reducedMotion =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const { data: site } = useSiteSettings();
   const status = useStoreStatus();
 
@@ -173,6 +195,7 @@ function Home() {
         ogDescription={
           site?.metaOgDescription || "Fresh dough, smashed patties, serious cold coffee."
         }
+        path="/"
       />
 
       <Header />
@@ -253,19 +276,19 @@ function Home() {
           <CategoryGrid onSelect={scrollToMenu} />
         </section>
 
-        <MenuSection category={category} onCategoryChange={setCategory} />
-
-        <TrustSection />
-        <GallerySection />
-        <InstagramSection />
-        <FaqSection />
+        <Suspense fallback={null}>
+          <MenuSection category={category} onCategoryChange={setCategory} />
+          <TrustSection />
+          <GallerySection />
+          <InstagramSection />
+          <FaqSection />
+        </Suspense>
         <LocationSection />
 
         <SiteFooter />
       </main>
 
-      <StickyCartBar />
-      <CartSheet />
+      <LazyCartUi />
     </>
   );
 }

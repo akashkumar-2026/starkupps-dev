@@ -133,6 +133,17 @@ export const ENV = {
   })(),
   cookieName: getEnv("COOKIE_NAME", "app_session_id"),
 
+  /**
+   * Vercel Deploy Hook URL for the public storefront — **server-side only**.
+   *
+   * The storefront is prerendered at build time, so after a storefront-visible
+   * mutation (menu, site content, FAQs, hours, Instagram) the gateway POSTs
+   * this hook to rebuild it. See `server/lib/seo-rebuild.ts`: unset ⇒ no-op,
+   * debounced, fail-open. Create it in Vercel (Project → Settings → Git →
+   * Deploy Hooks) and set it in the Cloud Run env, never in the repo.
+   */
+  seoRebuildHookUrl: getEnv("SEO_REBUILD_HOOK_URL"),
+
   // App URL
   // Default is the deployed Cloud Run origin. Override with APP_URL for a
   // different deployment or for local development; the https check below

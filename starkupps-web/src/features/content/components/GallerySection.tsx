@@ -103,7 +103,10 @@ export function GallerySection() {
   return (
     <section className="bg-espresso text-espresso-foreground">
       <div className="shell section-y">
-        <p className="eyebrow text-primary">The space</p>
+        {/* Label, not accent: terracotta `text-primary` fails contrast on the
+            espresso background, so the label is foreground at reduced opacity
+            (still ~7:1). Accent color stays for light surfaces only. */}
+        <p className="eyebrow text-espresso-foreground opacity-70">The space</p>
         <h2 className="display-lg mt-2 max-w-2xl">{site?.galleryHeading || "The space"}</h2>
         {site?.galleryBody && (
           <p className="mt-4 max-w-md text-base opacity-90">{site.galleryBody}</p>
@@ -128,7 +131,6 @@ export function GallerySection() {
               sizes={shot.span ? SIZES_SPAN : SIZES}
               loading="lazy"
               decoding="async"
-              animate
               className={`aspect-square w-full rounded-3xl object-cover sm:aspect-[3/2] ${shot.span}`}
             />
           ))}

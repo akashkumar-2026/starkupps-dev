@@ -1,6 +1,8 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+/* Self-hosted fonts (scripts/fetch-fonts.py) — same-origin, no Google chain. */
+@import "./fonts.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -151,8 +153,9 @@
   --card-foreground: var(--foreground);
   --popover: oklch(0.987 0.008 80);
   --popover-foreground: var(--foreground);
-  /* #C9622F */
-  --primary: oklch(0.585 0.144 43.5);
+  /* #A95025 — darkened from #C9622F (2026-10-10) so small text on cream
+     and white button text both clear WCAG AA 4.5:1. See docs/seo log. */
+  --primary: oklch(0.535 0.13 44);
   --primary-foreground: oklch(0.985 0.008 80);
   --secondary: oklch(0.938 0.016 76);
   --secondary-foreground: var(--foreground);
@@ -366,6 +369,29 @@
   @media (prefers-reduced-motion: reduce) {
     animation: none;
     transform: none;
+  }
+}
+
+/*
+ * Cart badge mount pop (header). Replaces a motion-library spring: the badge
+ * remounts on every count change, replaying this keyframe with no JS.
+ */
+@keyframes badge-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@utility badge-in {
+  animation: badge-in 0.25s ease-out both;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 }
 

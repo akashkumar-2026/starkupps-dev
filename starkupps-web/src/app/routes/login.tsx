@@ -23,7 +23,12 @@ function Login() {
 
   return (
     <>
-      <PageMeta title="Sign in" description="Sign in to StarKupps with your email and password." />
+      <PageMeta
+        title="Sign in"
+        description="Sign in to StarKupps with your email and password."
+        path="/login"
+        noIndex
+      />
 
       <Header />
       <main className="shell max-w-md py-10 sm:py-14">

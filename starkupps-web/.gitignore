@@ -13,6 +13,7 @@ src/routeTree.gen.ts
 
 # ── Test output ───────────────────────────────────────────────────────────
 coverage/
+.lighthouseci/
 
 # ── Environment ───────────────────────────────────────────────────────────
 # `.env.example` and `.env.production` are committed; every other env file may

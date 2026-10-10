@@ -25,6 +25,8 @@ function Signup() {
       <PageMeta
         title="Create account"
         description="Create a StarKupps account with your email and password."
+        path="/signup"
+        noIndex
       />
 
       <Header />

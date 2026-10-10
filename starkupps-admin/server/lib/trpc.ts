@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { AUTH_REQUIRED_MSG } from "@shared/const";
 import type { TrpcContext } from "./context";
+import { isStorefrontMutation, triggerStorefrontRebuild } from "./seo-rebuild";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -58,19 +59,31 @@ export const publicProcedure = t.procedure;
 // not authorized for Admin) so callers can distinguish from UNAUTHORIZED.
 // Legacy tokens without aud remain accepted for backward compatibility and
 // for direct tRPC caller tests that construct ctx manually.
-export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
-  if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: AUTH_REQUIRED_MSG });
-  }
-  const aud = (ctx as unknown as { aud?: string | null }).aud;
-  if (aud === "pos") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message:
-        "POS session cannot access Admin resources. Please sign in to the Admin panel.",
-    });
-  }
-  return next({ ctx: { ...ctx, user: ctx.user } });
-});
+export const protectedProcedure = t.procedure
+  .use(async ({ ctx, next }) => {
+    if (!ctx.user) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: AUTH_REQUIRED_MSG });
+    }
+    const aud = (ctx as unknown as { aud?: string | null }).aud;
+    if (aud === "pos") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "POS session cannot access Admin resources. Please sign in to the Admin panel.",
+      });
+    }
+    return next({ ctx: { ...ctx, user: ctx.user } });
+  })
+  // SEO freshness: after a SUCCESSFUL storefront-visible mutation, queue a
+  // storefront rebuild (Vercel Deploy Hook, debounced, fail-open). The
+  // allowlist lives in `server/lib/seo-rebuild.ts` — order/inventory/auth
+  // writes never match, so the lunch rush cannot rebuild the site.
+  .use(async ({ path, type, next }) => {
+    const result = await next();
+    if (type === "mutation" && result.ok && isStorefrontMutation(path)) {
+      triggerStorefrontRebuild(path);
+    }
+    return result;
+  });
 // Explicit admin-audience procedures use protectedProcedure directly.
 export const createCallerFactory = t.createCallerFactory;

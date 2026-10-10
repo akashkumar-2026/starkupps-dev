@@ -33,6 +33,8 @@ export type ResponsiveVariant = {
 export type ResponsiveSource = {
   /** Downscaled renditions, ascending by width. Empty when none were generated. */
   variants: ResponsiveVariant[];
+  /** AVIF twins of the same renditions. Empty when the generator lacked AVIF support. */
+  avifVariants: ResponsiveVariant[];
 };
 
 const modules = import.meta.glob("../assets/responsive/*.jpg", {
@@ -41,23 +43,34 @@ const modules = import.meta.glob("../assets/responsive/*.jpg", {
   import: "default",
 }) as Record<string, string>;
 
+const avifModules = import.meta.glob("../assets/responsive/*.avif", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+
 /** `-960` suffix on a stem-derived filename. */
-const WIDTH_SUFFIX = /-(\d{2,4})\.jpg$/;
+const WIDTH_SUFFIX = /-(\d{2,4})\.(jpg|avif)$/;
 
 const byStem = new Map<string, ResponsiveVariant[]>();
+const byStemAvif = new Map<string, ResponsiveVariant[]>();
 
-for (const [path, src] of Object.entries(modules)) {
-  const file = path.slice(path.lastIndexOf("/") + 1);
-  const match = WIDTH_SUFFIX.exec(file);
-  if (!match) continue;
-  const stem = file.slice(0, match.index);
-  const w = Number(match[1]);
-  const list = byStem.get(stem) ?? [];
-  list.push({ w, src });
-  byStem.set(stem, list);
+function collect(modules: Record<string, string>, into: Map<string, ResponsiveVariant[]>) {
+  for (const [path, src] of Object.entries(modules)) {
+    const file = path.slice(path.lastIndexOf("/") + 1);
+    const match = WIDTH_SUFFIX.exec(file);
+    if (!match) continue;
+    const stem = file.slice(0, match.index);
+    const w = Number(match[1]);
+    const list = into.get(stem) ?? [];
+    list.push({ w, src });
+    into.set(stem, list);
+  }
+  for (const list of into.values()) list.sort((a, b) => a.w - b.w);
 }
 
-for (const list of byStem.values()) list.sort((a, b) => a.w - b.w);
+collect(modules, byStem);
+collect(avifModules, byStemAvif);
 
 /**
  * Look up the variants generated for a bundled photo.
@@ -67,7 +80,8 @@ for (const list of byStem.values()) list.sort((a, b) => a.w - b.w);
  */
 export function resolveResponsive(stem: string): ResponsiveSource | undefined {
   const variants = byStem.get(stem);
-  return variants && variants.length > 0 ? { variants } : undefined;
+  if (!variants || variants.length === 0) return undefined;
+  return { variants, avifVariants: byStemAvif.get(stem) ?? [] };
 }
 
 /**

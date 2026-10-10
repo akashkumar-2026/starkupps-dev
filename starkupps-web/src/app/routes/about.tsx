@@ -4,7 +4,7 @@ import { MapPin } from "lucide-react";
 import { PageMeta } from "@/app/PageMeta";
 import { Header } from "@/components/layout/Header";
 import { ResponsiveImage } from "@/components/shared/ResponsiveImage";
-import { CartSheet } from "@/features/cart/components/CartSheet";
+import { LazyCartUi } from "@/features/cart/components/LazyCartUi";
 import { siteLinks } from "@/config/site";
 import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
 import spaceImg from "@/assets/space.jpg";
@@ -29,6 +29,7 @@ function About() {
         description="How StarKupps started in Munger, Bihar: our founder's note, our kitchen, FSSAI licensing, and where to find us."
         ogTitle="About StarKupps — Munger, Bihar"
         ogDescription="A founder's note, a look inside the kitchen, and directions to the café."
+        path="/about"
       />
 
       <Header />
@@ -133,7 +134,7 @@ function About() {
         )}
       </main>
 
-      <CartSheet />
+      <LazyCartUi bar={false} />
     </>
   );
 }

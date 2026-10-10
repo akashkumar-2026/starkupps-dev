@@ -17,7 +17,7 @@ import { springs } from "@/utils/motion";
  * card in a row whose sibling expanded would be stretched into a tall empty box —
  * that was the original bug in this section. Each cell keeps its own height.
  */
-export function FaqSection() {
+export function FaqSection({ contactHref = "#visit" }: { contactHref?: string }) {
   const { data: faqs, error, isLoading, isFetching, refetch } = usePublicFaqs();
   const [openId, setOpenId] = useState<number | null>(null);
 
@@ -134,7 +134,7 @@ export function FaqSection() {
             <p className="mt-6 text-sm text-muted-foreground">
               Still need a hand?{" "}
               <a
-                href="#visit"
+                href={contactHref}
                 className="-my-1 rounded-sm px-1 py-1 font-semibold text-primary underline decoration-primary/30 underline-offset-4 transition-colors hover:decoration-primary active:opacity-70"
               >
                 Get in touch
