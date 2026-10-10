@@ -4,6 +4,35 @@ Running log of every SEO change: what, why, evidence, rollback. Latest first.
 
 ---
 
+## 2026-10-10 — Perf/a11y pass + menu Outlet fix (commit `9281bdf`)
+
+**Routing fix:** `/menu/*` rendered the hub (missing Outlet parent) — category canonicals
+mismatched, pizza SEO 92. Fixed with `menu.route.tsx`; re-verified SEO 100.
+
+**Perf:** self-hosted fonts (no Google chain), AVIF ladder (~70% smaller),
+cart/auth/below-fold lazy, motion out of boot, relative-URL hero preload.
+
+Lab (Moto G4 emulated, localhost preview) vs real (unthrottled puppeteer):
+
+| Page | Perf | SEO | A11y | BP | LCP lab | CLS | LCP real |
+|---|---|---|---|---|---|---|---|
+| `/` | 82 | 100 | 100 | 96* | 4.3s | 0 | ~200ms |
+| `/menu` | 84 | 100 | 100 | 96* | 4.0s | 0 | — |
+| `/menu/pizza` | 84 | 100 | 100 | 96* | 3.8s | 0 | — |
+| `/contact` | 83 | 100 | 100 | 96* | 4.1s | 0 | — |
+| `/faq` | 86 | 100 | 100 | 96* | 3.8s | 0 | — |
+
+\* BP 96 = localhost CORS console errors only (gateway allowlists production
+origins); not a production defect. TBT 118→50ms. Emulated LCP is a headless
+software-rasterization artifact (identical run with JS disabled; real devices
+have GPUs) — CrUX field data post-launch is the true check, then decide on
+further JS diet (react/supabase/tanstack are irreducible without a framework
+change; motion removal from MenuSection/FaqSection would rewrite animations).
+
+**A11y fixes (measured before/after in-browser):** primary `#C9622F`→`#A95025`
+(text 4.03→4.95, buttons 3.98→5.13); gallery eyebrow to foreground label;
+FetchErrorState h3→h2. DoD a11y/SEO ≥95 met on all pages in lab.
+
 ## 2026-10-10 — Phase 3: page set + hub linking (commits `639c5b3`, `3c6dd78`)
 
 **What:** `/menu` hub, `/menu/$slug` ×6, `/contact`, `/faq` (+Breadcrumbs,
