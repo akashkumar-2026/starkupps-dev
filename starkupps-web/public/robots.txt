@@ -1,3 +1,59 @@
+# StarKupps storefront — crawler access policy.
+#
+# DEFAULT: ALLOW (maximum visibility). Search AND AI-search citation bots are
+# explicitly allowed so there is never ambiguity about who may fetch, index,
+# quote or cite public pages. Private flows (cart/checkout/account/admin/API/
+# previews) do not exist as indexable routes in this app — auth and account
+# pages carry their own `noindex` meta — so nothing is disallowed here beyond
+# the paths below, which are listed defensively.
+#
+# Training-only crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended,
+# Applebot-Extended) are ALLOWED by default. NOTE for the owner: flipping the
+# two stanzas marked [TRAINING] to `Disallow: /` opts out of AI *training*
+# use. That does NOT affect Google Search or AI Overviews eligibility
+# (Google-Extended does not control Search/AI Overviews), but it WILL reduce
+# future citation likelihood in ChatGPT/Claude, which learn partly from
+# training crawls. Decision recorded 2026-10-10: ALLOW (owner-actions #9).
+# Staging/preview deployments must NOT be indexable — serve them with
+# `X-Robots-Tag: noindex` or basic auth (Vercel project setting, owner action).
+
+# Live-search / citation agents (user-triggered: ChatGPT Search, Copilot,
+# Perplexity, Gemini, Claude) — always allowed.
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+# [TRAINING] AI training crawlers — default ALLOW, see header note.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# Search engines + social unfurlers.
 User-agent: Googlebot
 Allow: /
 
@@ -12,5 +68,12 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+# Defensive: never index API, auth callbacks, or preview/debug paths even if
+# some future route accidentally becomes reachable.
+Disallow: /api/
+Disallow: /auth/
+Disallow: /*?*preview=
+Disallow: /*?*debug=
 
 Sitemap: https://www.starkupps.in/sitemap.xml
