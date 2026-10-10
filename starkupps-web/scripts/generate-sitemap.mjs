@@ -42,7 +42,9 @@ const outFile = outFlag ? outFlag.slice("--out=".length) : join(root, "dist/site
 const siteConfig = readFileSync(join(root, "src/config/site.ts"), "utf8");
 const originMatch = siteConfig.match(/CANONICAL_ORIGIN\s*=\s*"([^"]+)"/);
 if (!originMatch) {
-  console.error("generate-sitemap: CANONICAL_ORIGIN not found in src/config/site.ts — refusing to guess.");
+  console.error(
+    "generate-sitemap: CANONICAL_ORIGIN not found in src/config/site.ts — refusing to guess.",
+  );
   process.exit(1);
 }
 const ORIGIN = originMatch[1];
@@ -78,9 +80,13 @@ const xml =
   `\n</urlset>\n`;
 
 if (!existsSync(dirname(outFile))) {
-  console.error(`generate-sitemap: output directory missing (${dirname(outFile)}) — run after vite build.`);
+  console.error(
+    `generate-sitemap: output directory missing (${dirname(outFile)}) — run after vite build.`,
+  );
   process.exit(1);
 }
 mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, xml);
-console.log(`generate-sitemap: wrote ${entries.length} URLs (${entries.map((e) => e.loc).join(", ")}) → ${outFile}`);
+console.log(
+  `generate-sitemap: wrote ${entries.length} URLs (${entries.map((e) => e.loc).join(", ")}) → ${outFile}`,
+);
