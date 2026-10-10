@@ -173,6 +173,7 @@ function Home() {
         ogDescription={
           site?.metaOgDescription || "Fresh dough, smashed patties, serious cold coffee."
         }
+        path="/"
       />
 
       <Header />

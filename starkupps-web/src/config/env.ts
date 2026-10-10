@@ -46,6 +46,13 @@ export const ENV = {
   googleMapsApiKey: readEnv("VITE_GOOGLE_MAPS_API_KEY"),
   /** Optional Cloud-based map styling id. */
   googleMapsMapId: readEnv("VITE_GOOGLE_MAPS_MAP_ID"),
+  /**
+   * Search-console verification tokens (public by design — they are echoed
+   * into `<meta>` tags). Absent ⇒ no verification tag is rendered.
+   * Set in the hosting dashboard; never commit values.
+   */
+  siteVerificationGoogle: readEnv("VITE_GSC_VERIFICATION"),
+  siteVerificationBing: readEnv("VITE_BING_VERIFICATION"),
 } as const;
 
 /** `true` when a map can be drawn. The delivery flow never depends on this. */

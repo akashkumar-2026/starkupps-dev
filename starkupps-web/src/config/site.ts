@@ -13,6 +13,21 @@ import type { PublicSiteSettings } from "@/types/site";
 
 export type SiteSettings = PublicSiteSettings;
 
+/**
+ * Canonical origin for SEO — owner-confirmed 2026-10-10 (see
+ * `docs/seo/00-discovery.md` §11 item 1). Every public URL's canonical,
+ * sitemap entry, robots `Sitemap:` line and JSON-LD `@id` derives from this
+ * single constant so `.in`/`.com` + apex/www can never drift apart.
+ * Non-canonical hosts 301 to this origin at the edge (`vercel.json`).
+ */
+export const CANONICAL_ORIGIN = "https://www.starkupps.in";
+
+/** Absolute canonical URL for a site path (`"/"` → origin + `"/"`). */
+export function canonicalUrl(path: string): string {
+  const clean = path.startsWith("/") ? path : `/${path}`;
+  return `${CANONICAL_ORIGIN}${clean}`;
+}
+
 /** Built from live settings. Empty strings yield no link, by design. */
 export function siteLinks(site: SiteSettings) {
   const mapsQuery = site.mapsQuery.trim();

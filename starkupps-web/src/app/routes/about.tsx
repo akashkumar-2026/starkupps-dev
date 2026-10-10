@@ -29,6 +29,7 @@ function About() {
         description="How StarKupps started in Munger, Bihar: our founder's note, our kitchen, FSSAI licensing, and where to find us."
         ogTitle="About StarKupps — Munger, Bihar"
         ogDescription="A founder's note, a look inside the kitchen, and directions to the café."
+        path="/about"
       />
 
       <Header />

@@ -5,6 +5,26 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://www.starkupps.in/$1",
+      "permanent": true,
+      "has": [{ "type": "host", "value": "starkupps.in" }]
+    },
+    {
+      "source": "/(.*)",
+      "destination": "https://www.starkupps.in/$1",
+      "permanent": true,
+      "has": [{ "type": "host", "value": "starkupps.com" }]
+    },
+    {
+      "source": "/(.*)",
+      "destination": "https://www.starkupps.in/$1",
+      "permanent": true,
+      "has": [{ "type": "host", "value": "www.starkupps.com" }]
+    }
+  ],
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "headers": [
     {
