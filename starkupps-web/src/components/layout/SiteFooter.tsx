@@ -1,4 +1,5 @@
 import { Phone } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 import { phoneDisplay, siteLinks } from "@/config/site";
 import { useSiteSettings, useStoreStatus } from "@/features/content/useSiteContent";
@@ -73,12 +74,30 @@ export function SiteFooter() {
         {phone && links?.tel && (
           <a
             href={links.tel}
-            className="pressable mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-espresso-foreground/25 px-5 text-base font-semibold"
+            className="pressable mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-5 text-base font-semibold"
           >
             <Phone className="size-5 shrink-0" />
             Call {phone}
           </a>
         )}
+
+        <nav aria-label="Footer" className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link to="/" className="opacity-80 hover:opacity-100 hover:underline">
+            Home
+          </Link>
+          <Link to="/menu" className="opacity-80 hover:opacity-100 hover:underline">
+            Menu
+          </Link>
+          <Link to="/about" className="opacity-80 hover:opacity-100 hover:underline">
+            About
+          </Link>
+          <Link to="/contact" className="opacity-80 hover:opacity-100 hover:underline">
+            Contact
+          </Link>
+          <Link to="/faq" className="opacity-80 hover:opacity-100 hover:underline">
+            FAQ
+          </Link>
+        </nav>
       </div>
     </footer>
   );

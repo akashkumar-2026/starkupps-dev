@@ -62,6 +62,13 @@ export function Header() {
           >
             About
           </Link>
+          <Link
+            to="/contact"
+            className="flex min-h-11 items-center rounded-xl px-2 font-medium text-muted-foreground active:opacity-70 sm:px-3"
+            activeProps={{ className: "text-foreground" }}
+          >
+            Contact
+          </Link>
           <Pressable
             onClick={() => setOpen(true)}
             aria-label={`Open cart, ${count} items`}
