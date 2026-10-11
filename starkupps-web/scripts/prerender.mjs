@@ -781,8 +781,8 @@ try {
 
 const homeMeta = {
   path: "/",
-  title: site.metaTitle || BRAND,
-  description: site.metaDescription || "Cold coffee, pizza and burgers in Munger, Bihar.",
+  title: site.metaTitle || "StarKupps Cafe | Munger | Good Place Good Vibe",
+  description: site.metaDescription || "StarKupps Cafe in Munger — cold coffee, pizza, burgers, shakes & mocktails. Good place, good vibe.",
   ogDescription: site.metaOgDescription || "",
 };
 const aboutMeta = {

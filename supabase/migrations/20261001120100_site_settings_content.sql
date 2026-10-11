@@ -58,8 +58,8 @@ UPDATE public.site_settings SET
   "menuHeading"      = 'Built to order, out in minutes.',
   "menuEmptyMessage" = 'The menu is being set up. Please check back shortly.',
 
-  "metaTitle"         = 'Coffee, Pizza & Burgers in Munger',
-  "metaDescription"   = 'Order cold coffee, hand-stretched pizza and smash burgers from StarKupps, Munger. Dine-in, takeaway or delivery — UPI checkout in under a minute.',
+  "metaTitle"         = 'StarKupps Cafe | Munger | Good Place Good Vibe',
+  "metaDescription"   = 'StarKupps Cafe in Munger — slow-churned cold coffee, hand-stretched pizza, burgers, shakes & mocktails. Good place, good vibe. Dine-in, takeaway or delivery.',
   "metaOgDescription" = 'Fresh dough, smashed patties, serious cold coffee. Order in under a minute.'
 WHERE id = 1
   AND "phoneDigits" = ''
